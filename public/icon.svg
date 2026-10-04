@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="128" fill="url(#bg-grad)"/>
+  <defs>
+    <linearGradient id="bg-grad" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#312e81"/>
+      <stop offset="0.5" stop-color="#4338ca"/>
+      <stop offset="1" stop-color="#4f46e5"/>
+    </linearGradient>
+    <linearGradient id="sand-grad" x1="256" y1="140" x2="256" y2="380" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#a855f7"/>
+    </linearGradient>
+  </defs>
+  <!-- Hourglass Base and Top -->
+  <rect x="156" y="100" width="200" height="24" rx="12" fill="#ffffff"/>
+  <rect x="156" y="388" width="200" height="24" rx="12" fill="#ffffff"/>
+  <!-- Glass outlines -->
+  <path d="M176 124 C176 220 236 240 256 256 C276 240 336 220 336 124 Z" fill="rgba(255,255,255,0.15)" stroke="#ffffff" stroke-width="12" stroke-linejoin="round"/>
+  <path d="M176 388 C176 292 236 272 256 256 C276 272 336 292 336 388 Z" fill="rgba(255,255,255,0.15)" stroke="#ffffff" stroke-width="12" stroke-linejoin="round"/>
+  <!-- Flowing Sand -->
+  <path d="M210 160 Q256 180 302 160 L280 220 Q256 235 232 220 Z" fill="url(#sand-grad)"/>
+  <path d="M220 376 Q256 320 292 376 Z" fill="url(#sand-grad)"/>
+  <circle cx="256" cy="275" r="4" fill="#38bdf8"/>
+  <circle cx="256" cy="300" r="5" fill="#38bdf8"/>
+  <!-- Keyboard / Book Accent Lines -->
+  <line x1="200" y1="440" x2="312" y2="440" stroke="#a5b4fc" stroke-width="8" stroke-linecap="round"/>
+</svg>

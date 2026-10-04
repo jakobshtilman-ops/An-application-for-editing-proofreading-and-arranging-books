@@ -1,0 +1,6 @@
+{
+  "name": "Typing Productivity Hub",
+  "description": "מערכת קלדנות, ניהול זמנים וארכיון פרודוקטיביות לעורכי ספרים וקלדנים עם תמיכה מלאה באופליין.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
