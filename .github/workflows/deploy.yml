@@ -39,10 +39,10 @@ jobs:
           npm run build
           touch dist/.nojekyll
 
-      - name: Upload production ZIP artifact
+      - name: Upload production ZIP artifact (Lightweight 600KB)
         uses: actions/upload-artifact@v4
         with:
-          name: typing-system-production-app
+          name: TypingSystem-App-Lightweight-600KB
           path: ./dist
           retention-days: 90
 
@@ -52,8 +52,8 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
 
-  build-windows-exe:
-    name: Build Windows EXE Application
+  build-tauri-windows:
+    name: Build Tauri Windows EXE & MSI
     needs: deploy
     runs-on: windows-latest
     steps:
@@ -65,23 +65,26 @@ jobs:
         with:
           node-version: 20
 
+      - name: Setup Rust Stable
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Download prebuilt Web Assets
         uses: actions/download-artifact@v4
         with:
-          name: typing-system-production-app
+          name: TypingSystem-App-Lightweight-600KB
           path: dist
 
-      - name: Install packaging dependencies
+      - name: Install Node dependencies
         run: npm install --legacy-peer-deps
 
-      - name: Build Windows EXE Installer & Portable EXE
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --win nsis portable --publish never
+      - name: Build Tauri EXE & MSI
+        run: npx tauri build --bundles nsis,msi
 
-      - name: Upload Windows EXE Installers
+      - name: Upload Windows MSI & EXE Installers
         uses: actions/upload-artifact@v4
         with:
-          name: TypingSystem-Windows-EXE
-          path: release/*.exe
+          name: TypingSystem-Tauri-Windows-EXE-and-MSI
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/msi/*.msi
           retention-days: 90
