@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Build and Deploy
 
 on:
   push:
@@ -15,46 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install dependencies
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci --legacy-peer-deps || npm install --legacy-peer-deps
-          else
-            npm install --legacy-peer-deps
-          fi
-
-      - name: Build PWA for GitHub Pages
-        run: |
-          npm run build
-          touch dist/.nojekyll
-
-      - name: Upload production ZIP artifact (Lightweight 600KB)
-        uses: actions/upload-artifact@v4
-        with:
-          name: TypingSystem-App-Lightweight-600KB
-          path: ./dist
-          retention-days: 90
-
-      - name: Deploy to GitHub Pages branch
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist
-
-  build-tauri-windows:
-    name: Build Tauri Windows EXE & MSI
-    needs: deploy
+  build-and-deploy:
+    name: Build Application, Windows EXE & MSI
     runs-on: windows-latest
     steps:
       - name: Checkout repository
@@ -68,14 +30,13 @@ jobs:
       - name: Setup Rust Stable
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Download prebuilt Web Assets
-        uses: actions/download-artifact@v4
-        with:
-          name: TypingSystem-App-Lightweight-600KB
-          path: dist
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps --include=optional
 
-      - name: Install Node dependencies
-        run: npm install --legacy-peer-deps
+      - name: Build Web Application
+        run: |
+          npm run build
+          New-Item -ItemType File -Force -Path dist\.nojekyll
 
       - name: Build Tauri EXE & MSI
         run: npx tauri build --bundles nsis,msi
@@ -83,8 +44,15 @@ jobs:
       - name: Upload Windows MSI & EXE Installers
         uses: actions/upload-artifact@v4
         with:
-          name: TypingSystem-Tauri-Windows-EXE-and-MSI
+          name: TypingSystem-Windows-MSI-and-EXE
           path: |
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/msi/*.msi
           retention-days: 90
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+
