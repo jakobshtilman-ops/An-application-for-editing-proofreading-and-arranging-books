@@ -7,9 +7,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { WorkMode, Language, BookArchiveRecord, SessionLogRecord, UsefulLink, BackupPayload, GoalRecord } from './types';
 import { SafeStorage } from './utils/safeStorage';
 import { FileSystemSync } from './utils/fileSystemSync';
-import { playSuccessSound } from './utils/sound';
+import { playSuccessSound, playStartSound, playStopSound } from './utils/sound';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { Header } from './components/Header';
+import { FloatingMiniTimer } from './components/FloatingMiniTimer';
 import { WorkTrackerTab } from './components/WorkTrackerTab';
 import { GoalsTab } from './components/GoalsTab';
 import { CalculatorsTab } from './components/CalculatorsTab';
@@ -145,6 +146,46 @@ export default function App() {
     return parseFloat(SafeStorage.getItem('accumulatedSeconds') || '0') || 0;
   });
 
+  // Root Level Resilient Timer State (immune to background throttling, tab switching, minimizing)
+  const [isTimerRunning, setIsTimerRunning] = useState(false);
+  const [timerStartedAt, setTimerStartedAt] = useState<number | null>(null);
+  const [displaySeconds, setDisplaySeconds] = useState<number>(() => {
+    return parseFloat(SafeStorage.getItem('accumulatedSeconds') || '0') || 0;
+  });
+  const [isFloatingMiniOpen, setIsFloatingMiniOpen] = useState(false);
+  const startCharsRef = React.useRef<number>(0);
+
+  // Synchronize timer display and protect against tab throttling
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
+
+    if (isTimerRunning && timerStartedAt !== null) {
+      const updateClock = () => {
+        const now = Date.now();
+        const elapsed = (now - timerStartedAt) / 1000;
+        setDisplaySeconds(accumulatedSeconds + elapsed);
+      };
+
+      updateClock();
+      intervalId = setInterval(updateClock, 500);
+
+      const handleSync = () => {
+        updateClock();
+      };
+
+      document.addEventListener('visibilitychange', handleSync);
+      window.addEventListener('focus', handleSync);
+
+      return () => {
+        if (intervalId) clearInterval(intervalId);
+        document.removeEventListener('visibilitychange', handleSync);
+        window.removeEventListener('focus', handleSync);
+      };
+    } else {
+      setDisplaySeconds(accumulatedSeconds);
+    }
+  }, [isTimerRunning, timerStartedAt, accumulatedSeconds]);
+
   // Databases
   const [history, setHistory] = useState<BookArchiveRecord[]>(() => {
     try {
@@ -223,7 +264,6 @@ export default function App() {
     // Update document title and lang attribute
     document.documentElement.lang = lang;
     document.documentElement.dir = 'rtl';
-    document.title = lang === 'he' ? 'מערכת קלדנות וניהול פרודוקטיביות' : 'קלדנות און פראדוקטיוויטעט סיסטעם';
   }, [
     workMode,
     hourlyRate,
@@ -241,6 +281,75 @@ export default function App() {
     sessionLogs,
     usefulLinks,
   ]);
+
+  // Timer Toggle Handler
+  const toggleTimer = useCallback(() => {
+    const cleanClipboard = clipboardText.replace(/\r/g, '').replace(/\n/g, '').replace(/\s/g, ' ');
+    const finalCharCount = Math.max(cleanClipboard.length, manualChars);
+
+    if (!isTimerRunning) {
+      playStartSound();
+      const now = Date.now();
+      setTimerStartedAt(now);
+      startCharsRef.current = finalCharCount;
+      setIsTimerRunning(true);
+      showToast(lang === 'he' ? 'סשן העבודה החל!' : 'ארבעט סעסיע אנגעהויבן!');
+    } else {
+      playStopSound();
+      const now = Date.now();
+      const sessionSeconds = timerStartedAt ? (now - timerStartedAt) / 1000 : 0;
+      const updatedTotal = accumulatedSeconds + sessionSeconds;
+      setAccumulatedSeconds(updatedTotal);
+      setDisplaySeconds(updatedTotal);
+      setIsTimerRunning(false);
+      setTimerStartedAt(null);
+
+      if (sessionSeconds > 5) {
+        const sessionChars = Math.max(0, finalCharCount - startCharsRef.current);
+        const targetRateNum = parseFloat(targetRateInput) || 4500;
+        const newSession: SessionLogRecord = {
+          id: `s_${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          bookName: bookName || 'ספר ללא שם',
+          chars: sessionChars,
+          seconds: Math.round(sessionSeconds),
+          rate: targetRateNum,
+        };
+        setSessionLogs((prev) => [newSession, ...prev]);
+      }
+      showToast(lang === 'he' ? 'סשן העבודה הושהה!' : 'ארבעט סעסיע אפגעשטעלט!');
+    }
+  }, [isTimerRunning, timerStartedAt, accumulatedSeconds, clipboardText, manualChars, targetRateInput, bookName, lang, showToast]);
+
+  // Global Keyboard Shortcuts (Ctrl+Space to toggle timer)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.code === 'Space') {
+        e.preventDefault();
+        toggleTimer();
+      } else if (e.altKey && (e.key === 's' || e.key === 'ד')) {
+        e.preventDefault();
+        toggleTimer();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleTimer]);
+
+  // Dynamic Document Title with Live Stopwatch
+  useEffect(() => {
+    if (isTimerRunning) {
+      const s = Math.floor(displaySeconds);
+      const hrs = Math.floor(s / 3600);
+      const mins = Math.floor((s % 3600) / 60);
+      const secs = s % 60;
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      document.title = `⏱️ ${pad(hrs)}:${pad(mins)}:${pad(secs)} | ${bookName || 'קלדנות'}`;
+    } else {
+      document.title = lang === 'he' ? 'מערכת קלדנות וניהול פרודוקטיביות' : 'קלדנות און פראדוקטיוויטעט סיסטעם';
+    }
+  }, [isTimerRunning, displaySeconds, bookName, lang]);
 
   // Master Payload Builder
   const prepareBackupPayload = useCallback((): BackupPayload => {
@@ -495,6 +604,9 @@ export default function App() {
       showToast(lang === 'he' ? 'הספר אורכב בהצלחה בארכיון הספרים!' : 'ספר געשפייכלערט אין ארכיוו!');
     }
 
+    setIsTimerRunning(false);
+    setTimerStartedAt(null);
+    setDisplaySeconds(0);
     setAccumulatedSeconds(0);
     setClipboardText('');
     setManualChars(0);
@@ -539,6 +651,10 @@ export default function App() {
         onSaveToComputerDisk={handleSaveToComputerDisk}
         onDisconnectComputerFile={handleDisconnectComputerFile}
         isOnline={isOnline}
+        isTimerRunning={isTimerRunning}
+        displaySeconds={displaySeconds}
+        onToggleTimer={toggleTimer}
+        onOpenFloatingTimer={() => setIsFloatingMiniOpen(true)}
       />
 
       {/* Main Content Body */}
@@ -568,6 +684,10 @@ export default function App() {
             onOpenResetConfirm={() => setIsConfirmResetOpen(true)}
             onSessionRecorded={handleSessionRecorded}
             showToast={showToast}
+            isRunning={isTimerRunning}
+            toggleTimer={toggleTimer}
+            displaySeconds={displaySeconds}
+            onOpenFloatingMini={() => setIsFloatingMiniOpen(true)}
           />
         )}
 
@@ -707,6 +827,22 @@ export default function App() {
         onClose={() => setIsConfirmResetOpen(false)}
         lang={lang}
         onConfirm={handleConfirmReset}
+      />
+
+      {/* Floating Always-On-Top Mini Timer Widget */}
+      <FloatingMiniTimer
+        lang={lang}
+        isRunning={isTimerRunning}
+        onToggleTimer={toggleTimer}
+        displaySeconds={displaySeconds}
+        charCount={Math.max(
+          clipboardText.replace(/\r/g, '').replace(/\n/g, '').replace(/\s/g, ' ').length,
+          manualChars
+        )}
+        bookName={bookName}
+        hourlyRate={hourlyRate}
+        isOpen={isFloatingMiniOpen}
+        onClose={() => setIsFloatingMiniOpen(false)}
       />
 
       {/* Toast Notification */}

@@ -43,6 +43,10 @@ interface Props {
   onOpenResetConfirm: () => void;
   onSessionRecorded: (elapsedSeconds: number, chars: number, rate: number) => void;
   showToast: (msg: string) => void;
+  isRunning: boolean;
+  toggleTimer: () => void;
+  displaySeconds: number;
+  onOpenFloatingMini: () => void;
 }
 
 export const WorkTrackerTab: React.FC<Props> = ({
@@ -69,22 +73,12 @@ export const WorkTrackerTab: React.FC<Props> = ({
   onOpenResetConfirm,
   onSessionRecorded,
   showToast,
+  isRunning,
+  toggleTimer,
+  displaySeconds,
+  onOpenFloatingMini,
 }) => {
   const t = translations[lang];
-
-  // Timer running state
-  const [isRunning, setIsRunning] = useState(false);
-  const [displaySeconds, setDisplaySeconds] = useState(accumulatedSeconds);
-  const startTimeRef = useRef<number>(0);
-  const startCharsRef = useRef<number>(0);
-  const pipWindowRef = useRef<Window | null>(null);
-
-  // Sync display seconds when accumulatedSeconds changes outside
-  useEffect(() => {
-    if (!isRunning) {
-      setDisplaySeconds(accumulatedSeconds);
-    }
-  }, [accumulatedSeconds, isRunning]);
 
   // Derived character count: clean clipboard text & take max
   const cleanClipboard = clipboardText.replace(/\r/g, '').replace(/\n/g, '').replace(/\s/g, ' ');
@@ -133,74 +127,12 @@ export const WorkTrackerTab: React.FC<Props> = ({
   // Performance Ring
   const performancePercentage = effectiveTargetRate > 0 ? (currentSpeed / effectiveTargetRate) * 100 : 0;
 
-  // Timer loop
-  useEffect(() => {
-    let animFrame: number;
-    let lastSave = 0;
-
-    if (isRunning) {
-      const updateTimer = () => {
-        const now = Date.now();
-        const elapsed = (now - startTimeRef.current) / 1000;
-        const total = accumulatedSeconds + elapsed;
-        setDisplaySeconds(total);
-
-        // Auto background state sync every 10s
-        const secFloor = Math.floor(elapsed);
-        if (secFloor % 10 === 0 && secFloor !== lastSave) {
-          lastSave = secFloor;
-        }
-
-        // Update Document PiP window if open
-        if (pipWindowRef.current) {
-          const pipTimerEl = pipWindowRef.current.document.getElementById('pip-timer');
-          const pipCharsEl = pipWindowRef.current.document.getElementById('pip-chars');
-          if (pipTimerEl) pipTimerEl.innerText = formatStopwatch(total);
-          if (pipCharsEl) pipCharsEl.innerText = finalCharCount.toLocaleString();
-        }
-
-        animFrame = requestAnimationFrame(updateTimer);
-      };
-      animFrame = requestAnimationFrame(updateTimer);
-    }
-
-    return () => {
-      if (animFrame) cancelAnimationFrame(animFrame);
-    };
-  }, [isRunning, accumulatedSeconds, finalCharCount]);
-
-  const toggleTimer = () => {
-    if (!isRunning) {
-      playStartSound();
-      startTimeRef.current = Date.now();
-      startCharsRef.current = finalCharCount;
-      setIsRunning(true);
-      showToast(lang === 'he' ? 'סשן העבודה החל!' : 'ארבעט סעסיע אנגעהויבן!');
-    } else {
-      playStopSound();
-      const elapsed = (Date.now() - startTimeRef.current) / 1000;
-      const updatedTotal = accumulatedSeconds + elapsed;
-      setAccumulatedSeconds(updatedTotal);
-      setDisplaySeconds(updatedTotal);
-      setIsRunning(false);
-
-      if (elapsed > 5) {
-        const sessionChars = Math.max(0, finalCharCount - startCharsRef.current);
-        onSessionRecorded(elapsed, sessionChars, effectiveTargetRate);
-      }
-      showToast(lang === 'he' ? 'סשן העבודה הושהה!' : 'ארבעט סעסיע אפגעשטעלט!');
-    }
-
-    if (pipWindowRef.current) {
-      const pipBtn = pipWindowRef.current.document.getElementById('pip-btn-toggle');
-      if (pipBtn) {
-        pipBtn.innerText = !isRunning ? (lang === 'he' ? 'השהה' : 'אפשטעלן') : (lang === 'he' ? 'התחל' : 'אנהייבן');
-      }
-    }
-  };
-
-  // Picture in Picture
+  // Picture in Picture & Floating Mini Widget
   const handleFloatingPiP = async () => {
+    // 1. Always open the in-app Draggable Floating Mini Widget (works 100% reliably in desktop, Tauri, and all browsers)
+    onOpenFloatingMini();
+
+    // 2. Also attempt native Document Picture-in-Picture if supported by the browser
     if ('documentPictureInPicture' in window) {
       try {
         const pipWindow = await (window as unknown as {
@@ -246,64 +178,15 @@ export const WorkTrackerTab: React.FC<Props> = ({
         `;
 
         pipWindow.document.body.appendChild(pipDiv);
-        pipWindowRef.current = pipWindow;
-
         pipWindow.document.getElementById('pip-btn-toggle')?.addEventListener('click', () => {
           toggleTimer();
         });
-
-        pipWindow.addEventListener('pagehide', () => {
-          pipWindowRef.current = null;
-        });
-
-        showToast(lang === 'he' ? 'חלון צף תמידי נפתח מעל שאר התוכנות!' : 'פלאָוטינג זייגער געעפֿנט!');
-        return;
       } catch (e) {
-        console.warn('PiP window request canceled or failed', e);
+        console.warn('Document Picture-in-Picture fallback triggered', e);
       }
     }
 
-    // Canvas fallback
-    try {
-      const canvas = document.createElement('canvas');
-      canvas.width = 320;
-      canvas.height = 180;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      const video = document.createElement('video');
-      video.muted = true;
-      video.srcObject = (canvas as unknown as { captureStream: (fps: number) => MediaStream }).captureStream(10);
-      
-      const draw = () => {
-        ctx.fillStyle = '#090d16';
-        ctx.fillRect(0, 0, 320, 180);
-        ctx.fillStyle = '#818cf8';
-        ctx.font = 'bold 13px Assistant, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(t.app_title, 160, 30);
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '900 32px monospace';
-        ctx.fillText(formatStopwatch(displaySeconds), 160, 85);
-        ctx.fillStyle = '#94a3b8';
-        ctx.font = 'bold 12px Assistant, sans-serif';
-        ctx.fillText(`תווים: ${finalCharCount.toLocaleString()}`, 160, 130);
-      };
-      draw();
-
-      video.addEventListener('play', () => {
-        const interval = setInterval(() => {
-          draw();
-          if (video.paused || video.ended) clearInterval(interval);
-        }, 100);
-      });
-
-      await video.play();
-      await video.requestPictureInPicture();
-      showToast(lang === 'he' ? 'חלון צף נפתח בהצלחה!' : 'פלאָוטינג זייגער געעפֿנט!');
-    } catch {
-      showToast(lang === 'he' ? 'הדפדפן אינו תומך בחלון צף במכשיר זה.' : 'דער בראוזער שטיצט נישט קיין פלאָוטינג פענסטער.');
-    }
+    showToast(lang === 'he' ? 'חלון צף הופעל! ניתן להזיז ולמזער אותו בחופשיות.' : 'פלאָוטינג זייגער אקטיווירט!');
   };
 
   return (

@@ -17,7 +17,10 @@ import {
   Target,
   HardDrive,
   FileCheck,
-  X
+  X,
+  Play,
+  Pause,
+  ExternalLink
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -37,6 +40,10 @@ interface HeaderProps {
   onSaveToComputerDisk: () => void;
   onDisconnectComputerFile: () => void;
   isOnline: boolean;
+  isTimerRunning?: boolean;
+  displaySeconds?: number;
+  onToggleTimer?: () => void;
+  onOpenFloatingTimer?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -56,9 +63,22 @@ export const Header: React.FC<HeaderProps> = ({
   onSaveToComputerDisk,
   onDisconnectComputerFile,
   isOnline,
+  isTimerRunning,
+  displaySeconds,
+  onToggleTimer,
+  onOpenFloatingTimer,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const t = translations[lang];
+
+  const formatStopwatch = (totalSec: number) => {
+    const s = Math.floor(totalSec);
+    const hrs = Math.floor(s / 3600);
+    const mins = Math.floor((s % 3600) / 60);
+    const secs = s % 60;
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${pad(hrs)}:${pad(mins)}:${pad(secs)}`;
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -93,6 +113,40 @@ export const Header: React.FC<HeaderProps> = ({
             <p className="text-[10px] sm:text-xs text-indigo-300/80">{t.app_subtitle}</p>
           </div>
         </div>
+
+        {/* Live Stopwatch Badge in Header */}
+        {displaySeconds !== undefined && (
+          <div className="flex items-center gap-2 bg-slate-900/90 px-3 py-1.5 rounded-xl border border-slate-700/80 shadow-inner">
+            <span className={`w-2.5 h-2.5 rounded-full ${isTimerRunning ? 'bg-rose-500 animate-ping' : 'bg-slate-500'}`} />
+            <span className="font-mono font-black text-sm text-emerald-400 tracking-wider">
+              {formatStopwatch(displaySeconds)}
+            </span>
+            {onToggleTimer && (
+              <button
+                type="button"
+                onClick={onToggleTimer}
+                className={`p-1 rounded-lg text-xs font-bold transition-all ${
+                  isTimerRunning
+                    ? 'bg-rose-600/30 text-rose-300 hover:bg-rose-600/50'
+                    : 'bg-emerald-600/30 text-emerald-300 hover:bg-emerald-600/50'
+                }`}
+                title={isTimerRunning ? 'השהה שעון עבודה (Ctrl+Space)' : 'הפעל שעון עבודה (Ctrl+Space)'}
+              >
+                {isTimerRunning ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+              </button>
+            )}
+            {onOpenFloatingTimer && (
+              <button
+                type="button"
+                onClick={onOpenFloatingTimer}
+                className="p-1 rounded-lg text-xs text-indigo-300 hover:bg-indigo-600/30 transition-all"
+                title="פתח חלון צף"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Controls and Utilities */}
         <div className="flex items-center gap-2.5 flex-wrap">
