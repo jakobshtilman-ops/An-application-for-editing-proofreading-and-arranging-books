@@ -31,11 +31,15 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install dependencies
-        run: npm install --legacy-peer-deps --include=optional
+        run: |
+          if (Test-Path package-lock.json) { Remove-Item package-lock.json -Force }
+          npm install --legacy-peer-deps --include=optional
+          npm install --no-save --legacy-peer-deps lightningcss-win32-x64-msvc @rolldown/binding-win32-x64-msvc @rollup/rollup-win32-x64-msvc
 
       - name: Build Web Application
         run: |
           npm run build
+          if ($LASTEXITCODE -ne 0) { throw "Build failed" }
           New-Item -ItemType File -Force -Path dist\.nojekyll
 
       - name: Build Tauri EXE & MSI

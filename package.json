@@ -65,6 +65,7 @@
   },
   "optionalDependencies": {
     "@rolldown/binding-win32-x64-msvc": "^1.2.12",
-    "@rollup/rollup-win32-x64-msvc": "^4.34.8"
+    "@rollup/rollup-win32-x64-msvc": "^4.34.8",
+    "lightningcss-win32-x64-msvc": "^1.33.0"
   }
 }
