@@ -15,6 +15,7 @@
   "build": {
     "appId": "com.jakobshtilman.typingsystem",
     "productName": "TypingSystem",
+    "publish": null,
     "directories": {
       "output": "release"
     },

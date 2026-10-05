@@ -75,7 +75,9 @@ jobs:
         run: npm install --legacy-peer-deps
 
       - name: Build Windows EXE Installer & Portable EXE
-        run: npx electron-builder --win nsis portable
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win nsis portable --publish never
 
       - name: Upload Windows EXE Installers
         uses: actions/upload-artifact@v4
