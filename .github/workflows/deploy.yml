@@ -39,6 +39,13 @@ jobs:
           npm run build
           touch dist/.nojekyll
 
+      - name: Upload production ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: typing-system-production-app
+          path: ./dist
+          retention-days: 90
+
       - name: Deploy to GitHub Pages branch
         uses: peaceiris/actions-gh-pages@v4
         with:
