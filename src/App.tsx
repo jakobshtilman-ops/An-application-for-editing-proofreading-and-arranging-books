@@ -534,6 +534,10 @@ export default function App() {
         onManualSave={handleManualSave}
         onExport={handleExportBackup}
         onImport={handleImportBackup}
+        linkedFileName={linkedFileName}
+        onLinkComputerFile={handleLinkComputerFile}
+        onSaveToComputerDisk={handleSaveToComputerDisk}
+        onDisconnectComputerFile={handleDisconnectComputerFile}
         isOnline={isOnline}
       />
 
@@ -564,6 +568,17 @@ export default function App() {
             onOpenResetConfirm={() => setIsConfirmResetOpen(true)}
             onSessionRecorded={handleSessionRecorded}
             showToast={showToast}
+          />
+        )}
+
+        {activeTab === 'goals' && (
+          <GoalsTab
+            lang={lang}
+            goals={goals}
+            onAddGoal={handleAddGoal}
+            onToggleGoal={handleToggleGoal}
+            onUpdateProgress={handleUpdateGoalProgress}
+            onDeleteGoal={handleDeleteGoal}
           />
         )}
 
