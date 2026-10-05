@@ -15,10 +15,31 @@ export interface GoalRecord {
   createdAt: string;
 }
 
+export interface ClientRecord {
+  id: string;
+  name: string;
+  contactPerson?: string;
+  phone?: string;
+  email?: string;
+  defaultMode: WorkMode; // 'regular' (תווים) or 'hourly' (שעתי)
+  defaultRate: number; // e.g. 4500 chars per 45₪ or 50 ₪/hour
+  notes?: string;
+  createdAt: string;
+}
+
+export interface PomodoroConfig {
+  enabled: boolean;
+  workMinutes: number; // default 25
+  breakMinutes: number; // default 5
+  soundEnabled: boolean;
+}
+
 export interface BookArchiveRecord {
   id: string;
   month: string; // yyyy-mm
   bookName: string;
+  clientId?: string;
+  clientName?: string;
   pages: number;
   chars3: number; // total target chars in book
   chars16: number; // chars worked
@@ -31,6 +52,8 @@ export interface SessionLogRecord {
   id: string;
   timestamp: string; // ISO string
   bookName: string;
+  clientId?: string;
+  clientName?: string;
   chars: number;
   seconds: number;
   rate: number;
@@ -48,6 +71,7 @@ export interface BackupPayload {
   bookHistory: BookArchiveRecord[];
   sessionLogs: SessionLogRecord[];
   usefulLinks: UsefulLink[];
+  clients?: ClientRecord[];
   bookNameInput: string;
   bookPagesInput: number;
   targetRateInput: string;
@@ -60,5 +84,6 @@ export interface BackupPayload {
   preferredLang: Language;
   quickNotes?: string;
   goals?: GoalRecord[];
+  pomodoroConfig?: PomodoroConfig;
   exportDate: string;
 }

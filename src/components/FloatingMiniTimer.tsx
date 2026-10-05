@@ -12,6 +12,11 @@ interface FloatingMiniTimerProps {
   hourlyRate: number;
   isOpen: boolean;
   onClose: () => void;
+  clientName?: string;
+  pomodoroActive?: boolean;
+  pomodoroPhase?: 'work' | 'break';
+  pomodoroSecondsLeft?: number;
+  onSkipPomodoroPhase?: () => void;
 }
 
 export const FloatingMiniTimer: React.FC<FloatingMiniTimerProps> = ({
@@ -23,6 +28,11 @@ export const FloatingMiniTimer: React.FC<FloatingMiniTimerProps> = ({
   bookName,
   isOpen,
   onClose,
+  clientName,
+  pomodoroActive,
+  pomodoroPhase = 'work',
+  pomodoroSecondsLeft = 0,
+  onSkipPomodoroPhase,
 }) => {
   const [isMinimized, setIsMinimized] = useState(false);
   const [position, setPosition] = useState({ x: 24, y: 24 }); // offset from bottom-left
@@ -44,6 +54,14 @@ export const FloatingMiniTimer: React.FC<FloatingMiniTimerProps> = ({
     const secs = s % 60;
     const pad = (n: number) => n.toString().padStart(2, '0');
     return `${pad(hrs)}:${pad(mins)}:${pad(secs)}`;
+  };
+
+  const formatCountdown = (totalSec: number) => {
+    const s = Math.max(0, Math.floor(totalSec));
+    const mins = Math.floor(s / 60);
+    const secs = s % 60;
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${pad(mins)}:${pad(secs)}`;
   };
 
   const handlePointerDown = (e: React.PointerEvent) => {
@@ -104,7 +122,12 @@ export const FloatingMiniTimer: React.FC<FloatingMiniTimerProps> = ({
         >
           <div className="flex items-center gap-1.5 font-bold text-indigo-400">
             <Move className="w-3.5 h-3.5 opacity-70" />
-            <span className="truncate max-w-[140px]">{bookName || (lang === 'he' ? 'קלדנות ועריכה' : 'טייפּינג')}</span>
+            <span className="truncate max-w-[130px]">{bookName || (lang === 'he' ? 'קלדנות ועריכה' : 'טייפּינג')}</span>
+            {clientName && (
+              <span className="text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-700/60 px-1.5 py-0.2 rounded-md max-w-[90px] truncate">
+                {clientName}
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-1">
@@ -134,6 +157,13 @@ export const FloatingMiniTimer: React.FC<FloatingMiniTimerProps> = ({
               <span className="font-mono font-bold text-sm tracking-wider text-emerald-300">
                 {formatStopwatch(displaySeconds)}
               </span>
+              {pomodoroActive && (
+                <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                  pomodoroPhase === 'work' ? 'bg-rose-900/60 text-rose-300' : 'bg-emerald-900/60 text-emerald-300'
+                }`}>
+                  {pomodoroPhase === 'work' ? '🍅' : '☕'} {formatCountdown(pomodoroSecondsLeft)}
+                </span>
+              )}
             </div>
             <button
               onClick={onToggleTimer}
@@ -159,6 +189,36 @@ export const FloatingMiniTimer: React.FC<FloatingMiniTimerProps> = ({
                 {formatStopwatch(displaySeconds)}
               </span>
             </div>
+
+            {/* Pomodoro Status Bar (when active) */}
+            {pomodoroActive && (
+              <div className={`w-full px-2.5 py-1.5 rounded-xl border flex items-center justify-between text-xs ${
+                pomodoroPhase === 'work'
+                  ? 'bg-rose-950/40 border-rose-800/60 text-rose-200'
+                  : 'bg-emerald-950/40 border-emerald-800/60 text-emerald-200'
+              }`}>
+                <div className="flex items-center gap-1.5">
+                  <span>{pomodoroPhase === 'work' ? '🍅' : '☕'}</span>
+                  <span className="font-bold text-[11px]">
+                    {pomodoroPhase === 'work'
+                      ? (lang === 'he' ? 'מיקוד עבודה' : 'פאקוס')
+                      : (lang === 'he' ? 'הפסקת מנוחה' : 'פאזע')}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono font-bold">{formatCountdown(pomodoroSecondsLeft)}</span>
+                  {onSkipPomodoroPhase && (
+                    <button
+                      onClick={onSkipPomodoroPhase}
+                      className="text-[10px] underline hover:opacity-80 transition"
+                      title={lang === 'he' ? 'דלג לשלב הבא' : 'איבערהיפן'}
+                    >
+                      {lang === 'he' ? 'דלג' : 'skip'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Stats Row */}
             <div className="grid grid-cols-2 gap-2 w-full text-xs">

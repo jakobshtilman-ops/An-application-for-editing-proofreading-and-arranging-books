@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { WorkMode, Language } from '../types';
+import { WorkMode, Language, ClientRecord, PomodoroConfig } from '../types';
 import { translations } from '../utils/translations';
 import { playStartSound, playStopSound } from '../utils/sound';
 import {
@@ -16,7 +16,9 @@ import {
   StickyNote,
   Copy,
   Trash2,
-  Clock3
+  Clock3,
+  Users,
+  Coffee
 } from 'lucide-react';
 
 interface Props {
@@ -47,6 +49,16 @@ interface Props {
   toggleTimer: () => void;
   displaySeconds: number;
   onOpenFloatingMini: () => void;
+  clients?: ClientRecord[];
+  selectedClientId?: string;
+  onSelectClient?: (client: ClientRecord | null) => void;
+  onOpenClientsTab?: () => void;
+  pomodoroConfig: PomodoroConfig;
+  onTogglePomodoro: () => void;
+  pomodoroPhase: 'work' | 'break';
+  pomodoroSecondsLeft: number;
+  pomodoroCompletedCycles: number;
+  onSkipPomodoroPhase: () => void;
 }
 
 export const WorkTrackerTab: React.FC<Props> = ({
@@ -77,6 +89,16 @@ export const WorkTrackerTab: React.FC<Props> = ({
   toggleTimer,
   displaySeconds,
   onOpenFloatingMini,
+  clients = [],
+  selectedClientId = '',
+  onSelectClient,
+  onOpenClientsTab,
+  pomodoroConfig,
+  onTogglePomodoro,
+  pomodoroPhase,
+  pomodoroSecondsLeft,
+  pomodoroCompletedCycles,
+  onSkipPomodoroPhase,
 }) => {
   const t = translations[lang];
 
@@ -189,6 +211,14 @@ export const WorkTrackerTab: React.FC<Props> = ({
     showToast(lang === 'he' ? 'חלון צף הופעל! ניתן להזיז ולמזער אותו בחופשיות.' : 'פלאָוטינג זייגער אקטיווירט!');
   };
 
+  const formatCountdown = (totalSec: number) => {
+    const s = Math.max(0, Math.floor(totalSec));
+    const mins = Math.floor(s / 60);
+    const secs = s % 60;
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${pad(mins)}:${pad(secs)}`;
+  };
+
   return (
     <section className="grid grid-cols-1 gap-8">
       {/* Top Card: Book Configuration */}
@@ -202,6 +232,47 @@ export const WorkTrackerTab: React.FC<Props> = ({
             {t.book_init_badge}
           </span>
         </div>
+
+        {/* Client Selector Bar */}
+        {clients && clients.length > 0 && (
+          <div className="mb-4 bg-indigo-50/70 border border-indigo-100 rounded-2xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-indigo-600" />
+              <span className="text-xs font-bold text-indigo-950">
+                {lang === 'he' ? 'שיוך לקוח / מו"ל לספר:' : 'פארבינדן קליענט:'}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <select
+                value={selectedClientId || ''}
+                onChange={(e) => {
+                  const found = clients.find((c) => c.id === e.target.value) || null;
+                  if (onSelectClient) onSelectClient(found);
+                }}
+                className="bg-white border border-indigo-200 text-xs font-bold rounded-xl px-3 py-1.5 text-slate-800 outline-none focus:border-indigo-600 shadow-xs"
+              >
+                <option value="">{lang === 'he' ? 'ללא לקוח (הגדרה ידנית)' : 'אן א קליענט'}</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} ({c.defaultMode === 'regular' ? `${c.defaultRate} תווים ל-45₪` : `${c.defaultRate} ₪/שעה`})
+                  </option>
+                ))}
+              </select>
+
+              {onOpenClientsTab && (
+                <button
+                  type="button"
+                  onClick={onOpenClientsTab}
+                  className="px-2.5 py-1 text-xs text-indigo-600 hover:text-indigo-800 font-bold bg-white border border-indigo-200 rounded-xl hover:bg-indigo-50 transition"
+                  title="נהל את רשימת הלקוחות"
+                >
+                  {lang === 'he' ? 'נהל לקוחות' : 'קליענטן'}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Book Name */}
@@ -398,6 +469,62 @@ export const WorkTrackerTab: React.FC<Props> = ({
                 <RotateCcw className="w-5 h-5" />
                 <span className="sm:inline hidden">{t.btn_reset}</span>
               </button>
+            </div>
+
+            {/* Pomodoro Timer Bar */}
+            <div className="w-full max-w-md mt-6 pt-5 border-t border-slate-100 flex flex-col items-center gap-3">
+              <div className="w-full flex items-center justify-between text-xs bg-slate-50/80 p-2.5 rounded-2xl border border-slate-200">
+                <button
+                  type="button"
+                  onClick={onTogglePomodoro}
+                  className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition active:scale-95 ${
+                    pomodoroConfig.enabled
+                      ? 'bg-rose-600 text-white shadow-xs'
+                      : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                  }`}
+                  title={pomodoroConfig.enabled ? 'כבה מצב פומודורו' : 'הפעל מצב פומודורו מובנה (25 דק עבודה + 5 דק מנוחה)'}
+                >
+                  <span className="text-sm">🍅</span>
+                  <span>{lang === 'he' ? 'מצב פומודורו (25/5)' : 'פאָמאָדאָראָ מאד'}</span>
+                  <span className={`w-2 h-2 rounded-full ${pomodoroConfig.enabled ? 'bg-white animate-pulse' : 'bg-slate-300'}`} />
+                </button>
+
+                {pomodoroConfig.enabled ? (
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2.5 py-1 rounded-xl text-xs font-bold font-mono border ${
+                      pomodoroPhase === 'work'
+                        ? 'bg-rose-50 text-rose-700 border-rose-200'
+                        : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    }`}>
+                      {pomodoroPhase === 'work'
+                        ? (lang === 'he' ? '🍅 עבודה: ' : '🍅 ארבעט: ')
+                        : (lang === 'he' ? '☕ מנוחה: ' : '☕ רואיג: ')}
+                      {formatCountdown(pomodoroSecondsLeft)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={onSkipPomodoroPhase}
+                      className="text-[11px] text-slate-500 hover:text-indigo-600 underline font-medium"
+                      title={lang === 'he' ? 'דלג לשלב הבא' : 'איבערהיפן'}
+                    >
+                      {lang === 'he' ? 'דלג שלב' : 'skip'}
+                    </button>
+                  </div>
+                ) : (
+                  <span className="text-[11px] text-slate-400 font-medium hidden sm:inline">
+                    {lang === 'he' ? 'עבודה מרוכזת עם הפסקות מנוחה' : 'פאקוס ארבעט מיט רואיגע פאזעס'}
+                  </span>
+                )}
+              </div>
+
+              {pomodoroConfig.enabled && pomodoroCompletedCycles > 0 && (
+                <div className="text-[11px] text-slate-500 flex items-center gap-1.5 font-semibold">
+                  <span>{lang === 'he' ? 'סבבים שהושלמו היום:' : 'פארטיגע סבבים:'}</span>
+                  <span className="text-rose-600 font-bold">
+                    {'🍅'.repeat(Math.min(pomodoroCompletedCycles, 6))} ({pomodoroCompletedCycles})
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Mini Totals */}

@@ -20,7 +20,8 @@ import {
   X,
   Play,
   Pause,
-  ExternalLink
+  ExternalLink,
+  Users
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -44,6 +45,7 @@ interface HeaderProps {
   displaySeconds?: number;
   onToggleTimer?: () => void;
   onOpenFloatingTimer?: () => void;
+  clientCount?: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -67,6 +69,7 @@ export const Header: React.FC<HeaderProps> = ({
   displaySeconds,
   onToggleTimer,
   onOpenFloatingTimer,
+  clientCount,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const t = translations[lang];
@@ -359,6 +362,23 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <BookMarked className="w-3.5 h-3.5" />
               <span>{t.tab_history}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('clients')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                activeTab === 'clients'
+                  ? 'bg-indigo-600 text-white shadow'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>{lang === 'he' ? 'לקוחות ותעריפים' : 'קליענטן'}</span>
+              {clientCount !== undefined && clientCount > 0 && (
+                <span className="px-1.5 py-0.2 bg-indigo-500/40 text-indigo-200 rounded-full text-[10px]">
+                  {clientCount}
+                </span>
+              )}
             </button>
             <button
               type="button"

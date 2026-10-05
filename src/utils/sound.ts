@@ -53,3 +53,18 @@ export function playStopSound(): void {
 export function playSuccessSound(): void {
   playTone(880, 0.18); // A5
 }
+
+export function playPomodoroBreakSound(): void {
+  // Pleasant three-tone chime for break time
+  playTone(523.25, 0.2); // C5
+  setTimeout(() => playTone(659.25, 0.2), 200); // E5
+  setTimeout(() => playTone(783.99, 0.35), 400); // G5
+}
+
+export function playPomodoroWorkSound(): void {
+  // Energetic chime for back to work
+  playTone(783.99, 0.15); // G5
+  setTimeout(() => playTone(880, 0.15), 160); // A5
+  setTimeout(() => playTone(1046.5, 0.3), 320); // C6
+}
+

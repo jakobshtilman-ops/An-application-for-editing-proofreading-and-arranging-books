@@ -4,14 +4,15 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { WorkMode, Language, BookArchiveRecord, SessionLogRecord, UsefulLink, BackupPayload, GoalRecord } from './types';
+import { WorkMode, Language, BookArchiveRecord, SessionLogRecord, UsefulLink, BackupPayload, GoalRecord, ClientRecord, PomodoroConfig } from './types';
 import { SafeStorage } from './utils/safeStorage';
 import { FileSystemSync } from './utils/fileSystemSync';
-import { playSuccessSound, playStartSound, playStopSound } from './utils/sound';
+import { playSuccessSound, playStartSound, playStopSound, playPomodoroBreakSound, playPomodoroWorkSound } from './utils/sound';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { Header } from './components/Header';
 import { FloatingMiniTimer } from './components/FloatingMiniTimer';
 import { WorkTrackerTab } from './components/WorkTrackerTab';
+import { ClientsTab } from './components/ClientsTab';
 import { GoalsTab } from './components/GoalsTab';
 import { CalculatorsTab } from './components/CalculatorsTab';
 import { DashboardTab } from './components/DashboardTab';
@@ -86,6 +87,42 @@ const seedGoals: GoalRecord[] = [
   },
 ];
 
+const seedClients: ClientRecord[] = [
+  {
+    id: 'c1',
+    name: 'הוצאת ספרים ירושלים',
+    contactPerson: 'הרב שמואל קליין',
+    phone: '052-1234567',
+    email: 'jerusalem.pub@gmail.com',
+    defaultMode: 'regular',
+    defaultRate: 4500,
+    notes: 'הגהה מדוקדקת לפי כללי המסורה. תשלום שוטף + 30.',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'c2',
+    name: 'מכון אור התורה',
+    contactPerson: 'רבי אהרן פרידמן',
+    phone: '054-9876543',
+    email: 'or.hatora@gmail.com',
+    defaultMode: 'hourly',
+    defaultRate: 55,
+    notes: 'עריכה תורנית והשוואת כתבי יד. תעריף 55 ₪ לשעה.',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'c3',
+    name: 'הוצאת פלדהיים (מחברים עצמאיים)',
+    contactPerson: 'יעקב לוי',
+    phone: '050-4445555',
+    email: 'feldheim.author@gmail.com',
+    defaultMode: 'regular',
+    defaultRate: 4200,
+    notes: 'ספרי קריאה ועיון. תעריף בונוס 4,200 תווים ל-45 ₪.',
+    createdAt: new Date().toISOString(),
+  },
+];
+
 export default function App() {
   const isOnline = useOnlineStatus();
 
@@ -155,6 +192,44 @@ export default function App() {
   const [isFloatingMiniOpen, setIsFloatingMiniOpen] = useState(false);
   const startCharsRef = React.useRef<number>(0);
 
+  // Toast state
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage((curr) => (curr === msg ? null : curr));
+    }, 3200);
+  }, []);
+
+  // Clients Database & Active Client
+  const [clients, setClients] = useState<ClientRecord[]>(() => {
+    try {
+      const saved = SafeStorage.getItem('userClients');
+      return saved ? JSON.parse(saved) : seedClients;
+    } catch {
+      return seedClients;
+    }
+  });
+
+  const [selectedClientId, setSelectedClientId] = useState<string>(() => {
+    return SafeStorage.getItem('selectedClientId') || '';
+  });
+
+  // Pomodoro Configuration & Runtime State
+  const [pomodoroConfig, setPomodoroConfig] = useState<PomodoroConfig>(() => {
+    try {
+      const saved = SafeStorage.getItem('pomodoroConfig');
+      return saved ? JSON.parse(saved) : { enabled: false, workMinutes: 25, breakMinutes: 5, soundEnabled: true };
+    } catch {
+      return { enabled: false, workMinutes: 25, breakMinutes: 5, soundEnabled: true };
+    }
+  });
+
+  const [pomodoroPhase, setPomodoroPhase] = useState<'work' | 'break'>('work');
+  const [pomodoroSecondsLeft, setPomodoroSecondsLeft] = useState<number>(25 * 60);
+  const [pomodoroCompletedCycles, setPomodoroCompletedCycles] = useState<number>(0);
+
   // Synchronize timer display and protect against tab throttling
   useEffect(() => {
     let intervalId: NodeJS.Timeout | null = null;
@@ -164,10 +239,31 @@ export default function App() {
         const now = Date.now();
         const elapsed = (now - timerStartedAt) / 1000;
         setDisplaySeconds(accumulatedSeconds + elapsed);
+
+        // Pomodoro Tick
+        if (pomodoroConfig.enabled) {
+          setPomodoroSecondsLeft((prev) => {
+            if (prev <= 1) {
+              if (pomodoroPhase === 'work') {
+                if (pomodoroConfig.soundEnabled) playPomodoroBreakSound();
+                setPomodoroPhase('break');
+                showToast(lang === 'he' ? '🍅 סיימת 25 דקות עבודה מרוכזות! צא להפסקת מנוחה של 5 דקות.' : 'פאָמאָדאָראָ פאַרטיג! נעם אַ פויזע.');
+                return pomodoroConfig.breakMinutes * 60;
+              } else {
+                if (pomodoroConfig.soundEnabled) playPomodoroWorkSound();
+                setPomodoroPhase('work');
+                setPomodoroCompletedCycles((c) => c + 1);
+                showToast(lang === 'he' ? '☕ ההפסקה הסתיימה! חוזרים לעבודה מרוכזת.' : 'פויזע פארטיג! צוריק צום ארבעט.');
+                return pomodoroConfig.workMinutes * 60;
+              }
+            }
+            return prev - 1;
+          });
+        }
       };
 
       updateClock();
-      intervalId = setInterval(updateClock, 500);
+      intervalId = setInterval(updateClock, 1000);
 
       const handleSync = () => {
         updateClock();
@@ -184,7 +280,7 @@ export default function App() {
     } else {
       setDisplaySeconds(accumulatedSeconds);
     }
-  }, [isTimerRunning, timerStartedAt, accumulatedSeconds]);
+  }, [isTimerRunning, timerStartedAt, accumulatedSeconds, pomodoroConfig, pomodoroPhase, lang, showToast]);
 
   // Databases
   const [history, setHistory] = useState<BookArchiveRecord[]>(() => {
@@ -233,16 +329,6 @@ export default function App() {
   // Storage Banner dismissed
   const [showStorageNotice, setShowStorageNotice] = useState(true);
 
-  // Toast state
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  const showToast = useCallback((msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => {
-      setToastMessage((curr) => (curr === msg ? null : curr));
-    }, 3200);
-  }, []);
-
   // Save changes to SafeStorage whenever inputs change
   useEffect(() => {
     SafeStorage.setItem('activeWorkMode', workMode);
@@ -260,6 +346,9 @@ export default function App() {
     SafeStorage.setItem('bookHistory', JSON.stringify(history));
     SafeStorage.setItem('sessionLogs', JSON.stringify(sessionLogs));
     SafeStorage.setItem('usefulLinks', JSON.stringify(usefulLinks));
+    SafeStorage.setItem('userClients', JSON.stringify(clients));
+    SafeStorage.setItem('selectedClientId', selectedClientId);
+    SafeStorage.setItem('pomodoroConfig', JSON.stringify(pomodoroConfig));
 
     // Update document title and lang attribute
     document.documentElement.lang = lang;
@@ -280,7 +369,84 @@ export default function App() {
     history,
     sessionLogs,
     usefulLinks,
+    clients,
+    selectedClientId,
+    pomodoroConfig,
   ]);
+
+  // Clients CRUD Handlers
+  const handleAddClient = (clientData: Omit<ClientRecord, 'id' | 'createdAt'>) => {
+    const newClient: ClientRecord = {
+      id: `c_${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      ...clientData,
+    };
+    setClients((prev) => [newClient, ...prev]);
+    showToast(lang === 'he' ? `הלקוח "${newClient.name}" נוסף בהצלחה!` : 'קליענט צוגעלייגט!');
+  };
+
+  const handleUpdateClient = (id: string, updated: Partial<ClientRecord>) => {
+    setClients((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, ...updated } : c))
+    );
+    showToast(lang === 'he' ? 'פרטי הלקוח עודכנו בהצלחה!' : 'קליענט דערהיינטיגט!');
+  };
+
+  const handleDeleteClient = (id: string) => {
+    setClients((prev) => prev.filter((c) => c.id !== id));
+    if (selectedClientId === id) {
+      setSelectedClientId('');
+    }
+    showToast(lang === 'he' ? 'הלקוח נמחק מהמאגר.' : 'קליענט אויסגעמעקט.');
+  };
+
+  const handleSelectClient = (client: ClientRecord | null) => {
+    if (client) {
+      setSelectedClientId(client.id);
+      SafeStorage.setItem('selectedClientId', client.id);
+      setWorkMode(client.defaultMode);
+      if (client.defaultMode === 'regular') {
+        setTargetRateInput(client.defaultRate.toString());
+      } else {
+        setHourlyRate(client.defaultRate);
+      }
+      showToast(lang === 'he' ? `הלקוח "${client.name}" נבחר והתעריף עודכן!` : 'קליענט אויסגעקליבן!');
+    } else {
+      setSelectedClientId('');
+      SafeStorage.removeItem('selectedClientId');
+    }
+  };
+
+  // Pomodoro Actions
+  const handleTogglePomodoro = () => {
+    setPomodoroConfig((prev) => {
+      const next = { ...prev, enabled: !prev.enabled };
+      SafeStorage.setItem('pomodoroConfig', JSON.stringify(next));
+      if (!prev.enabled) {
+        setPomodoroPhase('work');
+        setPomodoroSecondsLeft(next.workMinutes * 60);
+        showToast(lang === 'he' ? 'מצב פומודורו הופעל (25 דק עבודה / 5 דק מנוחה)' : 'פאָמאָדאָראָ אנגעצינדן');
+      } else {
+        showToast(lang === 'he' ? 'מצב פומודורו בוטל' : 'פאָמאָדאָראָ פארלאזט');
+      }
+      return next;
+    });
+  };
+
+  const handleSkipPomodoroPhase = () => {
+    if (pomodoroPhase === 'work') {
+      if (pomodoroConfig.soundEnabled) playPomodoroBreakSound();
+      setPomodoroPhase('break');
+      setPomodoroSecondsLeft(pomodoroConfig.breakMinutes * 60);
+      showToast(lang === 'he' ? 'דלגת לשלב מנוחה (5 דקות)' : 'איבערגעהיפט צו פויזע');
+    } else {
+      if (pomodoroConfig.soundEnabled) playPomodoroWorkSound();
+      setPomodoroPhase('work');
+      setPomodoroSecondsLeft(pomodoroConfig.workMinutes * 60);
+      setPomodoroCompletedCycles((c) => c + 1);
+      showToast(lang === 'he' ? 'דלגת לשלב עבודה מרוכזת (25 דקות)' : 'איבערגעהיפט צו ארבעט');
+    }
+  };
 
   // Timer Toggle Handler
   const toggleTimer = useCallback(() => {
@@ -357,6 +523,7 @@ export default function App() {
       bookHistory: history,
       sessionLogs,
       usefulLinks,
+      clients,
       bookNameInput: bookName,
       bookPagesInput: bookPages,
       targetRateInput,
@@ -369,12 +536,14 @@ export default function App() {
       preferredLang: lang,
       quickNotes,
       goals,
+      pomodoroConfig,
       exportDate: new Date().toISOString(),
     };
   }, [
     history,
     sessionLogs,
     usefulLinks,
+    clients,
     bookName,
     bookPages,
     targetRateInput,
@@ -387,6 +556,7 @@ export default function App() {
     lang,
     quickNotes,
     goals,
+    pomodoroConfig,
   ]);
 
   // Direct Computer Disk File Operations (File System Access API)
@@ -524,35 +694,45 @@ export default function App() {
     showToast(lang === 'he' ? 'קובץ הגיבוי יוצא בהצלחה למחשב!' : 'גיבוי פייל עקספארטירט!');
   };
 
-  // Full backup import (JSON file upload)
-  const handleImportBackup = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = JSON.parse(e.target?.result as string);
-        if (data.bookHistory) setHistory(data.bookHistory);
-        if (data.sessionLogs) setSessionLogs(data.sessionLogs);
-        if (data.usefulLinks) setUsefulLinks(data.usefulLinks);
-        if (data.goals) setGoals(data.goals);
-        if (data.bookNameInput !== undefined) setBookName(data.bookNameInput);
-        if (data.bookPagesInput !== undefined) setBookPages(data.bookPagesInput);
-        if (data.targetRateInput !== undefined) setTargetRateInput(data.targetRateInput);
-        if (data.totalBookChars !== undefined) setTotalBookChars(data.totalBookChars);
-        if (data.accumulatedSeconds !== undefined) setAccumulatedSeconds(data.accumulatedSeconds);
-        if (data.clipboardText !== undefined) setClipboardText(data.clipboardText);
-        if (data.manualCharInput !== undefined) setManualChars(data.manualCharInput);
-        if (data.quickNotes !== undefined) setQuickNotes(data.quickNotes);
-        if (data.activeWorkMode !== undefined) setWorkMode(data.activeWorkMode);
-        if (data.hourlyRate !== undefined) setHourlyRate(data.hourlyRate);
-        if (data.preferredLang !== undefined) setLang(data.preferredLang);
+  // Full backup import (JSON file upload) - 100% async, instant, never gets stuck
+  const handleImportBackup = async (file: File) => {
+    try {
+      showToast(lang === 'he' ? 'טוען קובץ גיבוי...' : 'לייענט פייל...');
+      const text = await file.text();
+      const data = JSON.parse(text);
 
-        playSuccessSound();
-        showToast(lang === 'he' ? 'כל הנתונים שוחזרו בהצלחה מקובץ הגיבוי!' : 'דאטן אימפארטירט מיט ערפאלג!');
-      } catch {
-        showToast(lang === 'he' ? 'שגיאה בקריאת קובץ הגיבוי. ודא שהקובץ תקין.' : 'שגיאה ביים לייענען דעם גיבוי פייל.');
+      if (!data || typeof data !== 'object') {
+        throw new Error('קובץ לא תקין');
       }
-    };
-    reader.readAsText(file);
+
+      if (Array.isArray(data.bookHistory)) setHistory(data.bookHistory);
+      if (Array.isArray(data.sessionLogs)) setSessionLogs(data.sessionLogs);
+      if (Array.isArray(data.usefulLinks)) setUsefulLinks(data.usefulLinks);
+      if (Array.isArray(data.goals)) setGoals(data.goals);
+      if (Array.isArray(data.clients)) setClients(data.clients);
+      if (data.bookNameInput !== undefined) setBookName(String(data.bookNameInput));
+      if (data.bookPagesInput !== undefined) setBookPages(Number(data.bookPagesInput) || 0);
+      if (data.targetRateInput !== undefined) setTargetRateInput(String(data.targetRateInput));
+      if (data.totalBookChars !== undefined) setTotalBookChars(Number(data.totalBookChars) || 0);
+      if (data.accumulatedSeconds !== undefined) {
+        const sec = Number(data.accumulatedSeconds) || 0;
+        setAccumulatedSeconds(sec);
+        setDisplaySeconds(sec);
+      }
+      if (data.clipboardText !== undefined) setClipboardText(String(data.clipboardText));
+      if (data.manualCharInput !== undefined) setManualChars(Number(data.manualCharInput) || 0);
+      if (data.quickNotes !== undefined) setQuickNotes(String(data.quickNotes));
+      if (data.activeWorkMode !== undefined) setWorkMode(data.activeWorkMode);
+      if (data.hourlyRate !== undefined) setHourlyRate(Number(data.hourlyRate) || 45);
+      if (data.preferredLang !== undefined) setLang(data.preferredLang);
+      if (data.pomodoroConfig) setPomodoroConfig(data.pomodoroConfig);
+
+      playSuccessSound();
+      showToast(lang === 'he' ? 'כל הנתונים שוחזרו בהצלחה מקובץ הגיבוי!' : 'דאטן אימפארטירט מיט ערפאלג!');
+    } catch (err) {
+      console.error('Import error:', err);
+      showToast(lang === 'he' ? 'שגיאה: קובץ ה-JSON אינו תקין או פגום.' : 'שגיאה ביים לייענען דעם JSON פייל.');
+    }
   };
 
   // Automated session log on timer pause
@@ -655,6 +835,7 @@ export default function App() {
         displaySeconds={displaySeconds}
         onToggleTimer={toggleTimer}
         onOpenFloatingTimer={() => setIsFloatingMiniOpen(true)}
+        clientCount={clients.length}
       />
 
       {/* Main Content Body */}
@@ -688,6 +869,31 @@ export default function App() {
             toggleTimer={toggleTimer}
             displaySeconds={displaySeconds}
             onOpenFloatingMini={() => setIsFloatingMiniOpen(true)}
+            clients={clients}
+            selectedClientId={selectedClientId}
+            onSelectClient={handleSelectClient}
+            onOpenClientsTab={() => setActiveTab('clients')}
+            pomodoroConfig={pomodoroConfig}
+            onTogglePomodoro={handleTogglePomodoro}
+            pomodoroPhase={pomodoroPhase}
+            pomodoroSecondsLeft={pomodoroSecondsLeft}
+            pomodoroCompletedCycles={pomodoroCompletedCycles}
+            onSkipPomodoroPhase={handleSkipPomodoroPhase}
+          />
+        )}
+
+        {activeTab === 'clients' && (
+          <ClientsTab
+            lang={lang}
+            clients={clients}
+            history={history}
+            onAddClient={handleAddClient}
+            onUpdateClient={handleUpdateClient}
+            onDeleteClient={handleDeleteClient}
+            onSelectClientForWork={(client) => {
+              handleSelectClient(client);
+              setActiveTab('tracker');
+            }}
           />
         )}
 
@@ -843,6 +1049,11 @@ export default function App() {
         hourlyRate={hourlyRate}
         isOpen={isFloatingMiniOpen}
         onClose={() => setIsFloatingMiniOpen(false)}
+        clientName={clients.find((c) => c.id === selectedClientId)?.name}
+        pomodoroActive={pomodoroConfig.enabled}
+        pomodoroPhase={pomodoroPhase}
+        pomodoroSecondsLeft={pomodoroSecondsLeft}
+        onSkipPomodoroPhase={handleSkipPomodoroPhase}
       />
 
       {/* Toast Notification */}
