@@ -51,3 +51,31 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
+
+  build-windows-exe:
+    name: Build Windows EXE Application
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Build Web Assets
+        run: npm run build
+
+      - name: Build Windows EXE Installer & Portable EXE
+        run: npx electron-builder --win nsis portable
+
+      - name: Upload Windows EXE Installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: TypingSystem-Windows-EXE
+          path: release/*.exe
+          retention-days: 90
