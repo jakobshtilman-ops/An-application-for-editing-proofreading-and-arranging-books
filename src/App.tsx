@@ -11,6 +11,7 @@ import { playSuccessSound, playStartSound, playStopSound, playPomodoroBreakSound
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { Header } from './components/Header';
 import { FloatingMiniTimer } from './components/FloatingMiniTimer';
+import { DesktopMiniWindow } from './components/DesktopMiniWindow';
 import { WorkTrackerTab } from './components/WorkTrackerTab';
 import { ClientsTab } from './components/ClientsTab';
 import { GoalsTab } from './components/GoalsTab';
@@ -28,7 +29,8 @@ import {
   ImportBackupModal,
 } from './components/Modals';
 import { formatStopwatchWithHundredths } from './utils/formatters';
-import { CheckCircle2, ShieldCheck, X } from 'lucide-react';
+import { isDesktopApp, setDesktopAlwaysOnTop, setDesktopMiniMode, closeDesktopApp } from './utils/desktop';
+import { CheckCircle2, ShieldCheck, X, Play, Pause, ChevronDown, ChevronUp, Clock, Pin } from 'lucide-react';
 
 const seedHistory: BookArchiveRecord[] = [
   { id: '1', month: '2026-05', bookName: 'ספר הניתוח המהיר', pages: 180, chars3: 540000, chars16: 154000, hours: 32.5, rate: 4500, payout: 1540 },
@@ -197,6 +199,15 @@ export default function App() {
   });
   const [isFloatingMiniOpen, setIsFloatingMiniOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  
+  // Window states (Desktop Always-On-Top, Main Window collapse, Mini Desktop Mode)
+  const [isAlwaysOnTop, setIsAlwaysOnTop] = useState<boolean>(() => {
+    return SafeStorage.getItem('isAlwaysOnTop') === 'true';
+  });
+  const [isMainWindowOpen, setIsMainWindowOpen] = useState<boolean>(() => {
+    return SafeStorage.getItem('isMainWindowOpen') !== 'false';
+  });
+  const [isMiniWindowMode, setIsMiniWindowMode] = useState<boolean>(false);
   const startCharsRef = React.useRef<number>(0);
 
   // Toast state
@@ -504,6 +515,47 @@ export default function App() {
       showToast(lang === 'he' ? 'סשן העבודה הושהה!' : 'ארבעט סעסיע אפגעשטעלט!');
     }
   }, [isTimerRunning, timerStartedAt, accumulatedSeconds, clipboardText, manualChars, targetRateInput, bookName, lang, showToast, clients, selectedClientId]);
+
+  // Desktop Always-On-Top Toggle
+  const handleToggleAlwaysOnTop = useCallback(async () => {
+    const next = !isAlwaysOnTop;
+    setIsAlwaysOnTop(next);
+    SafeStorage.setItem('isAlwaysOnTop', String(next));
+    await setDesktopAlwaysOnTop(next);
+    if (isDesktopApp()) {
+      showToast(next ? '📌 החלון נעוץ כעת מעל כל החלונות במחשב (Word, PDF וכו\')!' : 'הסרת נעיצת החלון.');
+    } else {
+      showToast(next ? '📌 נעיצת חלון מעל כולם הופעלה (במצב חלון צף PiP)' : 'נעיצה בוטלה.');
+    }
+  }, [isAlwaysOnTop, showToast]);
+
+  // Main Window Collapse Toggle
+  const handleToggleMainWindow = useCallback(() => {
+    setIsMainWindowOpen((prev) => {
+      const next = !prev;
+      SafeStorage.setItem('isMainWindowOpen', String(next));
+      showToast(next ? 'החלונית הראשית של התוכנה נפתחה!' : 'החלונית הראשית קופלה לתצוגה קומפקטית.');
+      return next;
+    });
+  }, [showToast]);
+
+  // Desktop Mini Floating Window Mode Toggle
+  const handleToggleMiniWindowMode = useCallback(async () => {
+    const next = !isMiniWindowMode;
+    setIsMiniWindowMode(next);
+    if (isDesktopApp()) {
+      await setDesktopMiniMode(next);
+      if (next) {
+        setIsAlwaysOnTop(true);
+        SafeStorage.setItem('isAlwaysOnTop', 'true');
+        showToast('מצב חלון צף שולחני הופעל ומעוגן מעל כל המסכים!');
+      } else {
+        showToast('חזרת לחלון תוכנה רגיל.');
+      }
+    } else {
+      setIsFloatingMiniOpen(next);
+    }
+  }, [isMiniWindowMode, showToast]);
 
   // Global Keyboard Shortcuts (Ctrl+Space to toggle timer)
   useEffect(() => {
