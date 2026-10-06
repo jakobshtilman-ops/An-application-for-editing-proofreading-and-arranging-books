@@ -16,8 +16,8 @@
         "url": "index.html",
         "width": 1280,
         "height": 850,
-        "minWidth": 900,
-        "minHeight": 600,
+        "minWidth": 300,
+        "minHeight": 180,
         "resizable": true,
         "fullscreen": false
       }

@@ -19,8 +19,20 @@ import {
   Trash2,
   Clock3,
   Users,
-  Coffee
+  Coffee,
+  ChevronDown,
+  ChevronUp,
+  Layers,
+  Eye,
+  EyeOff,
+  Pin,
+  X,
+  Clock,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
+import { SafeStorage } from '../utils/safeStorage';
+import { isDesktopApp, setDesktopAlwaysOnTop, setDesktopMiniMode } from '../utils/desktop';
 
 interface Props {
   lang: Language;
@@ -60,6 +72,10 @@ interface Props {
   pomodoroSecondsLeft: number;
   pomodoroCompletedCycles: number;
   onSkipPomodoroPhase: () => void;
+  isAlwaysOnTop?: boolean;
+  onToggleAlwaysOnTop?: () => void;
+  isMiniWindowMode?: boolean;
+  onToggleMiniWindowMode?: () => void;
 }
 
 export const WorkTrackerTab: React.FC<Props> = ({
@@ -100,8 +116,124 @@ export const WorkTrackerTab: React.FC<Props> = ({
   pomodoroSecondsLeft,
   pomodoroCompletedCycles,
   onSkipPomodoroPhase,
+  isAlwaysOnTop,
+  onToggleAlwaysOnTop,
+  isMiniWindowMode,
+  onToggleMiniWindowMode,
 }) => {
   const t = translations[lang];
+
+  // Panel collapse/expand states
+  const [isBookConfigOpen, setIsBookConfigOpen] = useState(() => {
+    return SafeStorage.getItem('pane_bookConfig') !== 'false';
+  });
+  const [isEstimatesOpen, setIsEstimatesOpen] = useState(() => {
+    return SafeStorage.getItem('pane_estimates') !== 'false';
+  });
+  const [isStopwatchOpen, setIsStopwatchOpen] = useState(() => {
+    return SafeStorage.getItem('pane_stopwatch') !== 'false';
+  });
+  const [isPasteSimOpen, setIsPasteSimOpen] = useState(() => {
+    return SafeStorage.getItem('pane_pasteSim') !== 'false';
+  });
+  const [isNotesOpen, setIsNotesOpen] = useState(() => {
+    return SafeStorage.getItem('pane_notes') !== 'false';
+  });
+  const [isPerformanceOpen, setIsPerformanceOpen] = useState(() => {
+    return SafeStorage.getItem('pane_performance') !== 'false';
+  });
+
+  // Panel close/hide states (allows closing/hiding any panel including the main panel)
+  const [hiddenPanes, setHiddenPanes] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = SafeStorage.getItem('hidden_panes');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const toggleHidePane = (key: string) => {
+    setHiddenPanes((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      SafeStorage.setItem('hidden_panes', JSON.stringify(next));
+      const titles: Record<string, string> = {
+        stopwatch: lang === 'he' ? 'שעון עבודה ראשי' : 'ארבעט זייגער',
+        bookConfig: lang === 'he' ? 'הגדרות ספר ולקוח' : 'ספר דעטאלן',
+        estimates: lang === 'he' ? 'מדדים והערכות בזמן אמת' : 'פראגרעס און שאצונגען',
+        pasteSim: lang === 'he' ? 'הזנת תווים והדבקה' : 'אותיות אריינלייגן',
+        notes: lang === 'he' ? 'הערות ומשימות לספר' : 'נאטיצן',
+        performance: lang === 'he' ? 'מדד מהירות וביצועים' : 'שנעלקייט מעסטער',
+      };
+      if (next[key]) {
+        showToast(lang === 'he' ? `חלונית "${titles[key] || key}" נסגרה (ניתן לפתוח מחדש בסרגל הניהול העליון)` : `פאנעל "${titles[key] || key}" פארמאכט`);
+      } else {
+        showToast(lang === 'he' ? `חלונית "${titles[key] || key}" נפתחה מחדש!` : `פאנעל "${titles[key] || key}" ווידער אפן!`);
+      }
+      return next;
+    });
+  };
+
+  const restoreAllPanes = () => {
+    setHiddenPanes({});
+    SafeStorage.setItem('hidden_panes', JSON.stringify({}));
+    expandAllPanes();
+    showToast(lang === 'he' ? 'כל החלוניות נפתחו והוצגו מחדש!' : 'אלע פאנעלן זענען ווידער אפן!');
+  };
+
+  const togglePane = (key: string, setter: React.Dispatch<React.SetStateAction<boolean>>) => {
+    setter((prev) => {
+      const next = !prev;
+      SafeStorage.setItem(`pane_${key}`, String(next));
+      return next;
+    });
+  };
+
+  const expandAllPanes = () => {
+    setIsBookConfigOpen(true);
+    setIsEstimatesOpen(true);
+    setIsStopwatchOpen(true);
+    setIsPasteSimOpen(true);
+    setIsNotesOpen(true);
+    setIsPerformanceOpen(true);
+    setHiddenPanes({});
+    SafeStorage.setItem('hidden_panes', JSON.stringify({}));
+    ['bookConfig', 'estimates', 'stopwatch', 'pasteSim', 'notes', 'performance'].forEach((k) =>
+      SafeStorage.setItem(`pane_${k}`, 'true')
+    );
+    showToast(lang === 'he' ? 'כל החלוניות נפתחו!' : 'אלע פענסטערס זענען אפן!');
+  };
+
+  const collapseAllPanes = () => {
+    setIsBookConfigOpen(false);
+    setIsEstimatesOpen(false);
+    setIsStopwatchOpen(false);
+    setIsPasteSimOpen(false);
+    setIsNotesOpen(false);
+    setIsPerformanceOpen(false);
+    ['bookConfig', 'estimates', 'stopwatch', 'pasteSim', 'notes', 'performance'].forEach((k) =>
+      SafeStorage.setItem(`pane_${k}`, 'false')
+    );
+    showToast(lang === 'he' ? 'כל החלוניות קופלו לתצוגה קומפקטית!' : 'אלע פענסטערס פארמאכט!');
+  };
+
+  const setFocusMode = () => {
+    setIsBookConfigOpen(false);
+    setIsEstimatesOpen(false);
+    setIsStopwatchOpen(true);
+    setIsPasteSimOpen(true);
+    setIsNotesOpen(false);
+    setIsPerformanceOpen(false);
+    setHiddenPanes({});
+    SafeStorage.setItem('hidden_panes', JSON.stringify({}));
+    ['bookConfig', 'estimates', 'notes', 'performance'].forEach((k) =>
+      SafeStorage.setItem(`pane_${k}`, 'false')
+    );
+    ['stopwatch', 'pasteSim'].forEach((k) =>
+      SafeStorage.setItem(`pane_${k}`, 'true')
+    );
+    showToast(lang === 'he' ? 'מצב מיקוד הופעל: רק השעון והתווים מוצגים!' : 'פאקוס מאד אקטיוו!');
+  };
 
   // Derived character count: clean clipboard text & take max
   const cleanClipboard = clipboardText.replace(/\r/g, '').replace(/\n/g, '').replace(/\s/g, ' ');
@@ -172,10 +304,26 @@ export const WorkTrackerTab: React.FC<Props> = ({
 
   // Picture in Picture & Floating Mini Widget
   const handleFloatingPiP = async () => {
-    // 1. Always open the in-app Draggable Floating Mini Widget (works 100% reliably in desktop, Tauri, and all browsers)
+    // 1. If running inside Desktop EXE (Electron or Tauri):
+    if (isDesktopApp()) {
+      if (onToggleMiniWindowMode) {
+        onToggleMiniWindowMode();
+      } else {
+        await setDesktopMiniMode(true);
+        await setDesktopAlwaysOnTop(true);
+      }
+      showToast(
+        lang === 'he'
+          ? '📌 חלון צף שולחני הופעל ומעוגן מעל כל חלונות המחשב (Word, PDF וכו\')!'
+          : 'פלאטינג פענסטער אקטיווירט העכער אלע פראגראמען!'
+      );
+      return;
+    }
+
+    // 2. In Web browser: open in-app Draggable Floating Mini Widget (works 100% reliably in all browsers)
     onOpenFloatingMini();
 
-    // 2. Also attempt native Document Picture-in-Picture if supported by the browser
+    // 3. Also attempt native Document Picture-in-Picture if supported by the browser
     if ('documentPictureInPicture' in window) {
       try {
         const pipWindow = await (window as unknown as {
@@ -290,174 +438,283 @@ export const WorkTrackerTab: React.FC<Props> = ({
   };
 
   return (
-    <section className="grid grid-cols-1 gap-8">
-      {/* Top Card: Book Configuration */}
-      <div className="bg-gradient-to-br from-white to-slate-50 rounded-3xl border border-slate-200/80 card-shadow p-6">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
-          <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-            <Info className="w-4 h-4 text-indigo-600" />
-            <span>{t.book_init_title}</span>
-          </h3>
-          <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 text-[10px] font-bold rounded-lg border border-indigo-100">
-            {t.book_init_badge}
+    <section className="grid grid-cols-1 gap-6">
+      {/* Master Panels Bar (Open / Close All & Focus Mode) */}
+      <div className="bg-slate-900/95 text-white p-3 px-4 rounded-2xl border border-slate-800 shadow-md flex items-center justify-between flex-wrap gap-2 text-xs">
+        <div className="flex items-center gap-2">
+          <Layers className="w-4 h-4 text-indigo-400" />
+          <span className="font-bold text-slate-200">
+            {lang === 'he' ? 'ניהול חלוניות ותצוגה:' : 'פאנעלן קאנטראל:'}
+          </span>
+          <span className="text-[11px] text-slate-400 hidden md:inline">
+            {lang === 'he' ? 'סגור ופתח כל חלונית בנפרד לפי נוחות העבודה' : 'עפענען און פארמאכן אלע חלוניות'}
           </span>
         </div>
 
-        {/* Client Selector Bar */}
-        {clients && clients.length > 0 && (
-          <div className="mb-4 bg-indigo-50/70 border border-indigo-100 rounded-2xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Users className="w-4 h-4 text-indigo-600" />
-              <span className="text-xs font-bold text-indigo-950">
-                {lang === 'he' ? 'שיוך לקוח / מו"ל לספר:' : 'פארבינדן קליענט:'}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <button
+            type="button"
+            onClick={expandAllPanes}
+            className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 hover:text-white rounded-lg font-bold text-[11px] transition flex items-center gap-1 border border-slate-700"
+            title="פתח את כל החלוניות בתוכנה"
+          >
+            <Eye className="w-3.5 h-3.5 text-indigo-400" />
+            <span>{lang === 'he' ? 'פתח הכל' : 'עפענען אלע'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={collapseAllPanes}
+            className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 hover:text-white rounded-lg font-bold text-[11px] transition flex items-center gap-1 border border-slate-700"
+            title="קפל את כל החלוניות לתצוגה קומפקטית"
+          >
+            <EyeOff className="w-3.5 h-3.5 text-slate-400" />
+            <span>{lang === 'he' ? 'קפל הכל' : 'פארמאכן אלע'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={setFocusMode}
+            className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white rounded-lg font-bold text-[11px] transition flex items-center gap-1 shadow-sm"
+            title="מצב מיקוד: מציג אך ורק את השעון וספירת התווים ללא הסחות דעת"
+          >
+            <Sliders className="w-3.5 h-3.5" />
+            <span>{lang === 'he' ? 'מצב מיקוד' : 'פאקוס מאד'}</span>
+          </button>
+
+          {onToggleAlwaysOnTop && (
+            <button
+              type="button"
+              onClick={onToggleAlwaysOnTop}
+              className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition flex items-center gap-1 ${
+                isAlwaysOnTop
+                  ? 'bg-emerald-600 text-white shadow-md'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+              }`}
+              title="נעץ חלון זה תמיד מעל כל חלון אחר במחשב (Word, WordPad וכו')"
+            >
+              <Pin className={`w-3.5 h-3.5 ${isAlwaysOnTop ? 'rotate-45 fill-current' : ''}`} />
+              <span>{isAlwaysOnTop ? (lang === 'he' ? 'מעל כולם 📌' : 'גענעגלט') : (lang === 'he' ? 'נעץ מעל כולם' : 'נעגלען')}</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Top Card: Book Configuration */}
+      <div className="bg-gradient-to-br from-white to-slate-50 rounded-3xl border border-slate-200/80 card-shadow p-5 sm:p-6 transition-all">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+          <div className="flex items-center gap-2">
+            <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+              <Info className="w-4 h-4 text-indigo-600" />
+              <span>{t.book_init_title}</span>
+            </h3>
+            {!isBookConfigOpen && (
+              <span className="text-xs text-slate-500 font-mono font-semibold bg-slate-100 px-2.5 py-0.5 rounded-lg border border-slate-200 truncate max-w-[280px]">
+                {bookName || 'ספר ללא שם'} | {bookPages} עמ' | {targetRateInput || '4500'}
               </span>
-            </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 text-[10px] font-bold rounded-lg border border-indigo-100">
+              {t.book_init_badge}
+            </span>
+            <button
+              type="button"
+              onClick={() => togglePane('bookConfig', setIsBookConfigOpen)}
+              className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 transition"
+              title={isBookConfigOpen ? 'קפל חלונית הגדרות ספר' : 'פתח חלונית הגדרות ספר'}
+            >
+              {isBookConfigOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
 
-            <div className="flex items-center gap-2 flex-wrap">
-              <select
-                value={selectedClientId || ''}
-                onChange={(e) => {
-                  const found = clients.find((c) => c.id === e.target.value) || null;
-                  if (onSelectClient) onSelectClient(found);
-                }}
-                className="bg-white border border-indigo-200 text-xs font-bold rounded-xl px-3 py-1.5 text-slate-800 outline-none focus:border-indigo-600 shadow-xs"
-              >
-                <option value="">{lang === 'he' ? 'ללא לקוח (הגדרה ידנית)' : 'אן א קליענט'}</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.defaultMode === 'regular' ? `${c.defaultRate} תווים ל-45₪` : `${c.defaultRate} ₪/שעה`})
-                  </option>
-                ))}
-              </select>
+        {isBookConfigOpen && (
+          <div>
+            {/* Client Selector Bar */}
+            {clients && clients.length > 0 && (
+              <div className="mb-4 bg-indigo-50/70 border border-indigo-100 rounded-2xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Users className="w-4 h-4 text-indigo-600" />
+                  <span className="text-xs font-bold text-indigo-950">
+                    {lang === 'he' ? 'שיוך לקוח / מו"ל לספר:' : 'פארבינדן קליענט:'}
+                  </span>
+                </div>
 
-              {onOpenClientsTab && (
-                <button
-                  type="button"
-                  onClick={onOpenClientsTab}
-                  className="px-2.5 py-1 text-xs text-indigo-600 hover:text-indigo-800 font-bold bg-white border border-indigo-200 rounded-xl hover:bg-indigo-50 transition"
-                  title="נהל את רשימת הלקוחות"
-                >
-                  {lang === 'he' ? 'נהל לקוחות' : 'קליענטן'}
-                </button>
-              )}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <select
+                    value={selectedClientId || ''}
+                    onChange={(e) => {
+                      const found = clients.find((c) => c.id === e.target.value) || null;
+                      if (onSelectClient) onSelectClient(found);
+                    }}
+                    className="bg-white border border-indigo-200 text-xs font-bold rounded-xl px-3 py-1.5 text-slate-800 outline-none focus:border-indigo-600 shadow-xs"
+                  >
+                    <option value="">{lang === 'he' ? 'ללא לקוח (הגדרה ידנית)' : 'אן א קליענט'}</option>
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.defaultMode === 'regular' ? `${c.defaultRate} תווים ל-45₪` : `${c.defaultRate} ₪/שעה`})
+                      </option>
+                    ))}
+                  </select>
+
+                  {onOpenClientsTab && (
+                    <button
+                      type="button"
+                      onClick={onOpenClientsTab}
+                      className="px-2.5 py-1 text-xs text-indigo-600 hover:text-indigo-800 font-bold bg-white border border-indigo-200 rounded-xl hover:bg-indigo-50 transition"
+                      title="נהל את רשימת הלקוחות"
+                    >
+                      {lang === 'he' ? 'נהל לקוחות' : 'קליענטן'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Book Name */}
+              <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
+                <label className="block text-xs font-bold text-slate-500 mb-1.5">{t.input_book_name}</label>
+                <input
+                  type="text"
+                  value={bookName}
+                  onChange={(e) => setBookName(e.target.value)}
+                  placeholder={t.placeholder_book_name}
+                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500/20"
+                />
+              </div>
+
+              {/* Book Pages */}
+              <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
+                <label className="block text-xs font-bold text-slate-500 mb-1.5">{t.input_pages}</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={bookPages}
+                  onChange={(e) => setBookPages(Math.max(1, Number(e.target.value) || 1))}
+                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500/20"
+                />
+              </div>
+
+              {/* Target Rate */}
+              <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
+                <label className="block text-xs font-bold text-slate-500 mb-1.5">
+                  {workMode === 'hourly' ? t.input_target_rate_flexible : t.input_target_rate}
+                </label>
+                <input
+                  type="text"
+                  value={targetRateInput}
+                  onChange={(e) => setTargetRateInput(e.target.value)}
+                  placeholder={workMode === 'hourly' ? t.flexible_target_placeholder : '4500'}
+                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500/20"
+                />
+              </div>
+
+              {/* Total Book Characters */}
+              <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
+                <label className="block text-xs font-bold text-slate-500 mb-1.5">{t.input_total_chars}</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={totalBookChars}
+                  onChange={(e) => setTotalBookChars(Math.max(1, Number(e.target.value) || 1))}
+                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500/20"
+                />
+              </div>
             </div>
           </div>
         )}
+      </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Book Name */}
-          <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
-            <label className="block text-xs font-bold text-slate-500 mb-1.5">{t.input_book_name}</label>
-            <input
-              type="text"
-              value={bookName}
-              onChange={(e) => setBookName(e.target.value)}
-              placeholder={t.placeholder_book_name}
-              className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500/20"
-            />
+      {/* Real-time Estimates & Progress Bar Card */}
+      <div className="bg-white rounded-3xl border border-slate-200/80 card-shadow p-5 sm:p-6 transition-all">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
+          <div className="flex items-center gap-2">
+            <BatteryMedium className="w-4 h-4 text-indigo-600" />
+            <span className="text-xs font-bold text-slate-700">
+              {lang === 'he' ? 'חלונית מדדים והערכות בזמן אמת' : 'פראגרעס און שאצונגען'}
+            </span>
+            {!isEstimatesOpen && (
+              <span className="text-xs font-bold text-indigo-600 font-mono bg-indigo-50 px-2.5 py-0.5 rounded-lg border border-indigo-100">
+                {progressRatio.toFixed(1)}% | {finalCharCount.toLocaleString()} תווים | ₪{computedEarnings.toFixed(2)}
+              </span>
+            )}
           </div>
-
-          {/* Book Pages */}
-          <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
-            <label className="block text-xs font-bold text-slate-500 mb-1.5">{t.input_pages}</label>
-            <input
-              type="number"
-              min={1}
-              value={bookPages}
-              onChange={(e) => setBookPages(Math.max(1, Number(e.target.value) || 1))}
-              className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500/20"
-            />
-          </div>
-
-          {/* Target Rate */}
-          <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
-            <label className="block text-xs font-bold text-slate-500 mb-1.5">
-              {workMode === 'hourly' ? t.input_target_rate_flexible : t.input_target_rate}
-            </label>
-            <input
-              type="text"
-              value={targetRateInput}
-              onChange={(e) => setTargetRateInput(e.target.value)}
-              placeholder={workMode === 'hourly' ? t.flexible_target_placeholder : '4500'}
-              className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500/20"
-            />
-          </div>
-
-          {/* Total Book Characters */}
-          <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
-            <label className="block text-xs font-bold text-slate-500 mb-1.5">{t.input_total_chars}</label>
-            <input
-              type="number"
-              min={1}
-              value={totalBookChars}
-              onChange={(e) => setTotalBookChars(Math.max(1, Number(e.target.value) || 1))}
-              className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500/20"
-            />
-          </div>
+          <button
+            type="button"
+            onClick={() => togglePane('estimates', setIsEstimatesOpen)}
+            className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 transition"
+            title={isEstimatesOpen ? 'קפל חלונית מדדים' : 'פתח חלונית מדדים'}
+          >
+            {isEstimatesOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
         </div>
 
-        {/* Real-time Estimates Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5 mt-5 pt-5 border-t border-slate-200/70">
-          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-center">
-            <p className="text-[10px] text-slate-400 font-bold uppercase">{t.stat_expected_hours}</p>
-            <p className="text-sm font-extrabold text-slate-700 mt-0.5">
-              {isFlexible && workMode === 'hourly'
-                ? t.lbl_actual_time_estimate
-                : `${targetTotalHours.toFixed(1)} ש'`}
-            </p>
-          </div>
+        {isEstimatesOpen && (
+          <div>
+            {/* Real-time Estimates Grid */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5 mb-4">
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-center">
+                <p className="text-[10px] text-slate-400 font-bold uppercase">{t.stat_expected_hours}</p>
+                <p className="text-sm font-extrabold text-slate-700 mt-0.5">
+                  {isFlexible && workMode === 'hourly'
+                    ? t.lbl_actual_time_estimate
+                    : `${targetTotalHours.toFixed(1)} ש'`}
+                </p>
+              </div>
 
-          <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100 text-center">
-            <p className="text-[10px] text-indigo-500 font-bold uppercase">{t.stat_expected_pay}</p>
-            <p className="text-sm font-extrabold text-indigo-950 mt-0.5">
-              ₪{expectedPaymentEnd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </p>
-          </div>
+              <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100 text-center">
+                <p className="text-[10px] text-indigo-500 font-bold uppercase">{t.stat_expected_pay}</p>
+                <p className="text-sm font-extrabold text-indigo-950 mt-0.5">
+                  ₪{expectedPaymentEnd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              </div>
 
-          <div className="bg-emerald-50/50 p-3 rounded-xl border border-emerald-100 text-center">
-            <p className="text-[10px] text-emerald-600 font-bold uppercase">{t.stat_actual_pay}</p>
-            <p className="text-sm font-extrabold text-emerald-950 mt-0.5">
-              ₪{computedEarnings.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </p>
-          </div>
+              <div className="bg-emerald-50/50 p-3 rounded-xl border border-emerald-100 text-center">
+                <p className="text-[10px] text-emerald-600 font-bold uppercase">{t.stat_actual_pay}</p>
+                <p className="text-sm font-extrabold text-emerald-950 mt-0.5">
+                  ₪{computedEarnings.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              </div>
 
-          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-center">
-            <p className="text-[10px] text-slate-400 font-bold uppercase">{t.stat_remaining_chars}</p>
-            <p className="text-sm font-extrabold text-slate-700 mt-0.5">{remainingChars.toLocaleString()}</p>
-          </div>
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-center">
+                <p className="text-[10px] text-slate-400 font-bold uppercase">{t.stat_remaining_chars}</p>
+                <p className="text-sm font-extrabold text-slate-700 mt-0.5">{remainingChars.toLocaleString()}</p>
+              </div>
 
-          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-center">
-            <p className="text-[10px] text-slate-400 font-bold uppercase">{t.stat_remaining_time}</p>
-            <p className="text-sm font-extrabold text-slate-700 mt-0.5">
-              {remainingHours > 0 ? `${remainingHours.toFixed(1)} ש'` : t.lbl_waiting_for_work}
-            </p>
-          </div>
-        </div>
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-center">
+                <p className="text-[10px] text-slate-400 font-bold uppercase">{t.stat_remaining_time}</p>
+                <p className="text-sm font-extrabold text-slate-700 mt-0.5">
+                  {remainingHours > 0 ? `${remainingHours.toFixed(1)} ש'` : t.lbl_waiting_for_work}
+                </p>
+              </div>
+            </div>
 
-        {/* Progress Bar */}
-        <div className="mt-4 pt-4 border-t border-slate-100">
-          <div className="flex items-center justify-between text-xs font-bold text-slate-500 mb-1.5">
-            <span className="flex items-center gap-1.5">
-              <BatteryMedium className="w-4 h-4 text-indigo-500" />
-              <span>{t.progress_indicator}</span>
-            </span>
-            <span className="text-indigo-700 font-mono font-bold">{progressRatio.toFixed(1)}%</span>
+            {/* Progress Bar */}
+            <div className="pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-500 mb-1.5">
+                <span className="flex items-center gap-1.5">
+                  <BatteryMedium className="w-4 h-4 text-indigo-500" />
+                  <span>{t.progress_indicator}</span>
+                </span>
+                <span className="text-indigo-700 font-mono font-bold">{progressRatio.toFixed(1)}%</span>
+              </div>
+              <div className="w-full bg-slate-200 rounded-full h-3 overflow-hidden shadow-inner">
+                <div
+                  className="bg-gradient-to-r from-indigo-500 to-indigo-700 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${progressRatio}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between mt-1 text-[10px] text-slate-400 font-semibold">
+                <span>
+                  {t.progress_worked_chars} <span className="font-mono text-slate-700 font-bold">{finalCharCount.toLocaleString()}</span>
+                </span>
+                <span>
+                  {t.progress_total_target} <span className="font-mono text-slate-700 font-bold">{totalBookChars.toLocaleString()}</span>
+                </span>
+              </div>
+            </div>
           </div>
-          <div className="w-full bg-slate-200 rounded-full h-3 overflow-hidden shadow-inner">
-            <div
-              className="bg-gradient-to-r from-indigo-500 to-indigo-700 h-full rounded-full transition-all duration-500"
-              style={{ width: `${progressRatio}%` }}
-            />
-          </div>
-          <div className="flex items-center justify-between mt-1 text-[10px] text-slate-400 font-semibold">
-            <span>
-              {t.progress_worked_chars} <span className="font-mono text-slate-700 font-bold">{finalCharCount.toLocaleString()}</span>
-            </span>
-            <span>
-              {t.progress_total_target} <span className="font-mono text-slate-700 font-bold">{totalBookChars.toLocaleString()}</span>
-            </span>
-          </div>
-        </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

@@ -21,7 +21,12 @@ import {
   Play,
   Pause,
   ExternalLink,
-  Users
+  Users,
+  Pin,
+  Minimize2,
+  Maximize2,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -47,6 +52,12 @@ interface HeaderProps {
   onOpenFloatingTimer?: () => void;
   clientCount?: number;
   onOpenImportModal?: () => void;
+  isAlwaysOnTop?: boolean;
+  onToggleAlwaysOnTop?: () => void;
+  isMainWindowOpen?: boolean;
+  onToggleMainWindow?: () => void;
+  isMiniWindowMode?: boolean;
+  onToggleMiniWindowMode?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -72,6 +83,12 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenFloatingTimer,
   clientCount,
   onOpenImportModal,
+  isAlwaysOnTop,
+  onToggleAlwaysOnTop,
+  isMainWindowOpen = true,
+  onToggleMainWindow,
+  isMiniWindowMode,
+  onToggleMiniWindowMode,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const t = translations[lang];
@@ -148,6 +165,64 @@ export const Header: React.FC<HeaderProps> = ({
                 title="פתח חלון צף"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            {/* Desktop Always-On-Top Pin Button */}
+            {onToggleAlwaysOnTop && (
+              <button
+                type="button"
+                onClick={onToggleAlwaysOnTop}
+                className={`p-1 px-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                  isAlwaysOnTop
+                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/20'
+                    : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
+                }`}
+                title={
+                  isAlwaysOnTop
+                    ? 'החלון נעוץ מעל כל חלון אחר במחשב! לחץ לשחרור נעילה'
+                    : 'נעץ חלון זה תמיד מעל כל חלון פתוח אחר במחשב (Word, WordPad וכו\')'
+                }
+              >
+                <Pin className={`w-3.5 h-3.5 ${isAlwaysOnTop ? 'rotate-45 fill-current text-white' : ''}`} />
+                <span className="hidden sm:inline text-[11px]">
+                  {isAlwaysOnTop ? 'מעל כולם' : 'נעץ'}
+                </span>
+              </button>
+            )}
+
+            {/* Close / Open Main Window Toggle */}
+            {onToggleMainWindow && (
+              <button
+                type="button"
+                onClick={onToggleMainWindow}
+                className={`p-1 px-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                  isMainWindowOpen === false
+                    ? 'bg-amber-600 text-white shadow-md shadow-amber-500/20 animate-pulse'
+                    : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
+                }`}
+                title={isMainWindowOpen === false ? 'פתח את החלונית הראשית של התוכנה' : 'סגור/קפל את החלונית הראשית'}
+              >
+                {isMainWindowOpen === false ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+                <span className="hidden sm:inline text-[11px]">
+                  {isMainWindowOpen === false ? 'פתח חלונית' : 'קפל חלונית'}
+                </span>
+              </button>
+            )}
+
+            {/* Mini Window Mode Toggle */}
+            {onToggleMiniWindowMode && (
+              <button
+                type="button"
+                onClick={onToggleMiniWindowMode}
+                className={`p-1 px-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                  isMiniWindowMode
+                    ? 'bg-indigo-600 text-white shadow-md'
+                    : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
+                }`}
+                title={isMiniWindowMode ? 'חזור לחלון רגיל' : 'מצב חלון קומפקטי צף'}
+              >
+                {isMiniWindowMode ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
               </button>
             )}
           </div>
