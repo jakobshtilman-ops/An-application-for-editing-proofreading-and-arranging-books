@@ -46,6 +46,7 @@ interface HeaderProps {
   onToggleTimer?: () => void;
   onOpenFloatingTimer?: () => void;
   clientCount?: number;
+  onOpenImportModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -70,6 +71,7 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleTimer,
   onOpenFloatingTimer,
   clientCount,
+  onOpenImportModal,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const t = translations[lang];
@@ -282,7 +284,13 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => {
+                if (onOpenImportModal) {
+                  onOpenImportModal();
+                } else {
+                  fileInputRef.current?.click();
+                }
+              }}
               className="p-1.5 sm:px-2.5 sm:py-1.5 bg-indigo-900/80 hover:bg-indigo-800 active:scale-95 text-indigo-200 hover:text-white font-bold text-xs rounded-lg transition-all shadow-sm flex items-center gap-1.5 border border-indigo-700/70"
               title={t.btn_import_title}
             >
@@ -294,6 +302,7 @@ export const Header: React.FC<HeaderProps> = ({
               ref={fileInputRef}
               accept=".json"
               className="hidden"
+              onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
               onChange={handleFileChange}
             />
 

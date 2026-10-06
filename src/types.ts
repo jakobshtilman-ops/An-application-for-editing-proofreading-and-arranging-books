@@ -1,7 +1,7 @@
 export type WorkMode = 'regular' | 'hourly';
 export type Language = 'he' | 'yi';
 export type GoalTimeRange = 'hours' | 'days' | 'weeks' | 'months';
-export type GoalMetric = 'chars' | 'hours' | 'earnings';
+export type GoalMetric = 'chars' | 'hours' | 'earnings' | 'books';
 
 export interface GoalRecord {
   id: string;
@@ -12,6 +12,7 @@ export interface GoalRecord {
   timeRange: GoalTimeRange;
   deadline?: string; // ISO date string YYYY-MM-DD or datetime
   completed: boolean;
+  autoTrack?: boolean; // automatically sync from session logs & active clock
   createdAt: string;
 }
 

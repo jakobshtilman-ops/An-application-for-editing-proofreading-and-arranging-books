@@ -523,3 +523,185 @@ export const ConfirmResetModal: React.FC<ConfirmResetModalProps> = ({
     </div>
   );
 };
+
+interface ImportBackupModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  lang: Language;
+  onImportFile: (file: File) => void | Promise<void>;
+  onImportJsonText: (text: string) => void;
+}
+
+export const ImportBackupModal: React.FC<ImportBackupModalProps> = ({
+  isOpen,
+  onClose,
+  lang,
+  onImportFile,
+  onImportJsonText,
+}) => {
+  const [activeTab, setActiveTab] = useState<'file' | 'paste'>('file');
+  const [pastedJson, setPastedJson] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  if (!isOpen) return null;
+
+  const handleFile = async (file: File) => {
+    if (!file) return;
+    setErrorMsg(null);
+    setIsProcessing(true);
+    try {
+      await onImportFile(file);
+      setIsProcessing(false);
+      onClose();
+    } catch (err: unknown) {
+      setIsProcessing(false);
+      const msg = err instanceof Error ? err.message : 'שגיאה בקריאת הקובץ';
+      setErrorMsg(msg);
+    }
+  };
+
+  const handleTextSubmit = () => {
+    if (!pastedJson.trim()) {
+      setErrorMsg(lang === 'he' ? 'אנא הדבק תוכן JSON' : 'ביטע לייגט אריין JSON טעקסט');
+      return;
+    }
+    setErrorMsg(null);
+    try {
+      JSON.parse(pastedJson.trim());
+      onImportJsonText(pastedJson.trim());
+      setPastedJson('');
+      onClose();
+    } catch {
+      setErrorMsg(lang === 'he' ? 'תוכן ה-JSON אינו תקין (בדוק פסיקים או סוגריים חסרים)' : 'דער JSON איז נישט גילטיג');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl border border-slate-100 shadow-2xl max-w-lg w-full p-6 text-right relative">
+        <div className="flex items-center justify-between mb-3 border-b border-slate-100 pb-3">
+          <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+            <span className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg">📥</span>
+            <span>{lang === 'he' ? 'ייבוא ושחזור נתונים מקובץ גיבוי' : 'אימפארטירן דאטן פון גיבוי'}</span>
+          </h3>
+          <button
+            onClick={onClose}
+            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Tab switch: File vs Direct Paste */}
+        <div className="flex bg-slate-100 p-1 rounded-xl mb-4">
+          <button
+            type="button"
+            onClick={() => { setActiveTab('file'); setErrorMsg(null); }}
+            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition ${
+              activeTab === 'file' ? 'bg-white text-indigo-600 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            {lang === 'he' ? '📁 בחירת קובץ JSON מהמחשב' : '📁 אויסקלויבן פייל'}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setActiveTab('paste'); setErrorMsg(null); }}
+            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition ${
+              activeTab === 'paste' ? 'bg-white text-indigo-600 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            {lang === 'he' ? '📋 הדבקת תוכן JSON ישירה' : '📋 אריינלייגן טעקסט'}
+          </button>
+        </div>
+
+        {errorMsg && (
+          <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
+
+        {activeTab === 'file' ? (
+          <div>
+            {/* Drag & Drop Area */}
+            <div
+              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragging(false);
+                const file = e.dataTransfer.files?.[0];
+                if (file) handleFile(file);
+              }}
+              onClick={() => fileInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all ${
+                isDragging
+                  ? 'border-indigo-500 bg-indigo-50/50 scale-[1.01]'
+                  : 'border-slate-300 hover:border-indigo-400 bg-slate-50 hover:bg-slate-50/80'
+              }`}
+            >
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept=".json"
+                className="hidden"
+                onClick={(e) => { (e.target as HTMLInputElement).value = ''; }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleFile(file);
+                }}
+              />
+              <div className="text-3xl mb-2">📄</div>
+              <p className="text-xs font-bold text-slate-700 mb-1">
+                {lang === 'he' ? 'לחץ כאן לבחירת קובץ ה-JSON או גרור אותו לכאן' : 'קליקט אויסצוקלויבן דעם פייל אדער שלעפט אהער'}
+              </p>
+              <p className="text-[11px] text-slate-400">
+                {lang === 'he' ? 'קריאה מיידית תוך שבריר שניה — ללא תקיעות וללא צורך באינטרנט' : 'שנעל און 100% אפליין'}
+              </p>
+            </div>
+
+            {isProcessing && (
+              <div className="mt-3 text-center text-xs text-indigo-600 font-bold animate-pulse">
+                {lang === 'he' ? 'טוען ומאמת נתונים מקובץ...' : 'לייענט דעם פייל...'}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div>
+            <label className="block text-xs font-bold text-slate-600 mb-1.5">
+              {lang === 'he' ? 'הדבק כאן את תוכן קובץ ה-JSON (Ctrl+V):' : 'לייגט אריין דעם JSON טעקסט:'}
+            </label>
+            <textarea
+              value={pastedJson}
+              onChange={(e) => setPastedJson(e.target.value)}
+              rows={6}
+              placeholder='{"bookHistory": [...], "sessionLogs": [...]}'
+              className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-xs font-mono outline-none focus:border-indigo-600 focus:bg-white text-slate-800 transition"
+              dir="ltr"
+            />
+            <button
+              type="button"
+              onClick={handleTextSubmit}
+              className="mt-3 w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition active:scale-95"
+            >
+              {lang === 'he' ? 'שחזר את הנתונים מטקסט זה כעת' : 'אימפארטירן יעצט'}
+            </button>
+          </div>
+        )}
+
+        <div className="mt-4 pt-3 border-t border-slate-100 flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-xl transition"
+          >
+            {lang === 'he' ? 'סגור' : 'פארמאכן'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};

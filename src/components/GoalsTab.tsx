@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { GoalRecord, GoalTimeRange, GoalMetric, Language } from '../types';
+import { GoalRecord, GoalTimeRange, GoalMetric, Language, SessionLogRecord, BookArchiveRecord } from '../types';
 import { translations } from '../utils/translations';
 import {
   Target,
@@ -13,7 +13,9 @@ import {
   AlertCircle,
   Sparkles,
   Layers,
-  ChevronRight
+  ChevronRight,
+  BookOpen,
+  RefreshCw
 } from 'lucide-react';
 
 interface Props {
@@ -23,6 +25,10 @@ interface Props {
   onToggleGoal: (id: string) => void;
   onUpdateProgress: (id: string, delta: number) => void;
   onDeleteGoal: (id: string) => void;
+  sessionLogs?: SessionLogRecord[];
+  history?: BookArchiveRecord[];
+  displaySeconds?: number;
+  currentWorkedChars?: number;
 }
 
 export const GoalsTab: React.FC<Props> = ({
@@ -32,6 +38,10 @@ export const GoalsTab: React.FC<Props> = ({
   onToggleGoal,
   onUpdateProgress,
   onDeleteGoal,
+  sessionLogs = [],
+  history = [],
+  displaySeconds = 0,
+  currentWorkedChars = 0,
 }) => {
   const t = translations[lang];
 
@@ -47,18 +57,87 @@ export const GoalsTab: React.FC<Props> = ({
   const [formTarget, setFormTarget] = useState<number>(20000);
   const [formInitial, setFormInitial] = useState<number>(0);
   const [formDeadline, setFormDeadline] = useState<string>('');
+  const [formAutoTrack, setFormAutoTrack] = useState<boolean>(true);
+
+  // Calculate live automatic progress for any goal
+  const getAutoGoalProgress = (goal: GoalRecord): number => {
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+    const thisMonthStr = now.toISOString().slice(0, 7);
+    const oneWeekAgoMs = now.getTime() - 7 * 24 * 60 * 60 * 1000;
+
+    const inRange = (timestamp: string): boolean => {
+      if (goal.timeRange === 'days') {
+        return timestamp.slice(0, 10) === todayStr;
+      }
+      if (goal.timeRange === 'weeks') {
+        return new Date(timestamp).getTime() >= oneWeekAgoMs;
+      }
+      if (goal.timeRange === 'months') {
+        return timestamp.slice(0, 7) === thisMonthStr;
+      }
+      // 'hours' or all
+      return true;
+    };
+
+    if (goal.metric === 'chars') {
+      const logsSum = sessionLogs
+        .filter((l) => inRange(l.timestamp))
+        .reduce((sum, l) => sum + (l.chars || 0), 0);
+      return logsSum + currentWorkedChars;
+    }
+
+    if (goal.metric === 'hours') {
+      const logsHours = sessionLogs
+        .filter((l) => inRange(l.timestamp))
+        .reduce((sum, l) => sum + (l.seconds || 0) / 3600, 0);
+      const activeHours = displaySeconds / 3600;
+      return parseFloat((logsHours + activeHours).toFixed(1));
+    }
+
+    if (goal.metric === 'books') {
+      const booksInHistory = history.filter((b) => {
+        if (goal.timeRange === 'months') {
+          return b.month === thisMonthStr;
+        }
+        return true;
+      });
+      return booksInHistory.length;
+    }
+
+    if (goal.metric === 'earnings') {
+      const historyPayout = history
+        .filter((b) => goal.timeRange === 'months' ? b.month === thisMonthStr : true)
+        .reduce((sum, b) => sum + (b.payout || 0), 0);
+      return Math.round(historyPayout);
+    }
+
+    return goal.currentValue || 0;
+  };
+
+  const getEffectiveGoalValue = (goal: GoalRecord): number => {
+    if (goal.autoTrack !== false) {
+      return getAutoGoalProgress(goal);
+    }
+    return goal.currentValue || 0;
+  };
 
   const filteredGoals = goals.filter((g) => {
-    if (statusFilter === 'active' && g.completed) return false;
-    if (statusFilter === 'completed' && !g.completed) return false;
+    const current = getEffectiveGoalValue(g);
+    const isCompleted = g.completed || current >= g.targetValue;
+    if (statusFilter === 'active' && isCompleted) return false;
+    if (statusFilter === 'completed' && !isCompleted) return false;
     if (rangeFilter !== 'all' && g.timeRange !== rangeFilter) return false;
     return true;
   });
 
   // Aggregates
   const totalGoals = goals.length;
-  const activeGoals = goals.filter((g) => !g.completed).length;
-  const completedGoals = goals.filter((g) => g.completed).length;
+  const activeGoals = goals.filter((g) => {
+    const current = getEffectiveGoalValue(g);
+    return !g.completed && current < g.targetValue;
+  }).length;
+  const completedGoals = totalGoals - activeGoals;
   const completionRate = totalGoals > 0 ? (completedGoals / totalGoals) * 100 : 0;
 
   const handleCreateGoal = (e: React.FormEvent) => {
@@ -72,6 +151,7 @@ export const GoalsTab: React.FC<Props> = ({
       currentValue: formInitial || 0,
       timeRange: formRange,
       deadline: formDeadline || undefined,
+      autoTrack: formAutoTrack,
       completed: false,
     });
 
@@ -79,28 +159,31 @@ export const GoalsTab: React.FC<Props> = ({
     setFormTarget(20000);
     setFormInitial(0);
     setFormDeadline('');
+    setFormAutoTrack(true);
     setIsModalOpen(false);
   };
 
   const getRangeLabel = (range: GoalTimeRange) => {
     switch (range) {
       case 'hours':
-        return lang === 'he' ? 'שעות / סשן' : "שעה'ן / סעסיע";
+        return lang === 'he' ? 'סשן / שעות' : "סעסיע / שעה'ן";
       case 'days':
-        return lang === 'he' ? 'יומי (ימים)' : 'טעגלעך';
+        return lang === 'he' ? 'יומי (היום)' : 'טעגלעך';
       case 'weeks':
-        return lang === 'he' ? 'שבועי (שבועות)' : 'וואכנטלעך';
+        return lang === 'he' ? 'שבועי (השבוע)' : 'וואכנטלעך';
       case 'months':
-        return lang === 'he' ? 'חודשי (חודשים)' : 'חודש׳לעך';
+        return lang === 'he' ? 'חודשי (החודש)' : 'חודש׳לעך';
     }
   };
 
   const getMetricLabel = (metric: GoalMetric) => {
     switch (metric) {
       case 'chars':
-        return lang === 'he' ? 'תווים' : 'אותיות';
+        return lang === 'he' ? 'תווים שהוקלדו' : 'אותיות';
       case 'hours':
         return lang === 'he' ? 'שעות עבודה' : "ארבעט שעה'ן";
+      case 'books':
+        return lang === 'he' ? 'ספרים שהושלמו' : 'געענדיגטע ספרים';
       case 'earnings':
         return lang === 'he' ? 'הכנסה (₪)' : 'פארדינסט (₪)';
     }
@@ -112,6 +195,8 @@ export const GoalsTab: React.FC<Props> = ({
         return ' תווים';
       case 'hours':
         return " שעות";
+      case 'books':
+        return " ספרים";
       case 'earnings':
         return ' ₪';
     }

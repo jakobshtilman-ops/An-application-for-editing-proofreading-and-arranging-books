@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { WorkMode, Language, ClientRecord, PomodoroConfig } from '../types';
 import { translations } from '../utils/translations';
 import { playStartSound, playStopSound } from '../utils/sound';
+import { formatStopwatchWithHundredths } from '../utils/formatters';
 import {
   Play,
   Pause,
@@ -148,6 +149,26 @@ export const WorkTrackerTab: React.FC<Props> = ({
 
   // Performance Ring
   const performancePercentage = effectiveTargetRate > 0 ? (currentSpeed / effectiveTargetRate) * 100 : 0;
+  const timeObj = formatStopwatchWithHundredths(displaySeconds);
+
+  // Latest state ref for PiP window sync
+  const latestStateRef = useRef({
+    displaySeconds,
+    isRunning,
+    finalCharCount,
+    bookName,
+    manualChars,
+  });
+
+  useEffect(() => {
+    latestStateRef.current = {
+      displaySeconds,
+      isRunning,
+      finalCharCount,
+      bookName,
+      manualChars,
+    };
+  }, [displaySeconds, isRunning, finalCharCount, bookName, manualChars]);
 
   // Picture in Picture & Floating Mini Widget
   const handleFloatingPiP = async () => {
@@ -163,7 +184,7 @@ export const WorkTrackerTab: React.FC<Props> = ({
           };
         }).documentPictureInPicture.requestWindow({
           width: 320,
-          height: 220,
+          height: 250,
         });
 
         // Copy styles
@@ -187,21 +208,70 @@ export const WorkTrackerTab: React.FC<Props> = ({
         pipDiv.style.direction = 'rtl';
 
         pipDiv.innerHTML = `
-          <div class="text-xs text-indigo-400 font-bold mb-2">${t.app_title}</div>
-          <div id="pip-timer" class="text-3xl font-mono font-black text-white bg-slate-900 border border-slate-800 px-4 py-2.5 rounded-2xl shadow-inner mb-3 tracking-tight">
-            ${formatStopwatch(displaySeconds)}
+          <div class="text-xs text-indigo-400 font-bold mb-1 truncate max-w-[280px]">${bookName || t.app_title}</div>
+          <div id="pip-timer" class="text-2xl font-mono font-black text-white bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-2xl shadow-inner mb-2 tracking-tight">
+            ${timeObj.full}
           </div>
-          <div class="text-[11px] text-slate-400">
-            ${t.progress_worked_chars} <strong id="pip-chars" class="text-emerald-400 font-mono">${finalCharCount.toLocaleString()}</strong>
+          <div class="text-[11px] text-slate-300 mb-2 flex items-center justify-center gap-1.5">
+            <span>${t.progress_worked_chars}</span>
+            <strong id="pip-chars" class="text-emerald-400 font-mono font-bold">${finalCharCount.toLocaleString()}</strong>
           </div>
-          <button id="pip-btn-toggle" class="mt-3 px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold text-xs rounded-xl transition-all">
-            ${isRunning ? (lang === 'he' ? 'השהה' : 'אפשטעלן') : (lang === 'he' ? 'התחל' : 'אנהייבן')}
+          <div class="flex items-center justify-center gap-1.5 mb-3 w-full">
+            <button id="pip-btn-add100" class="flex-1 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-mono font-bold rounded-lg border border-slate-700">+100</button>
+            <button id="pip-btn-add500" class="flex-1 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-mono font-bold rounded-lg border border-slate-700">+500</button>
+            <button id="pip-btn-add1000" class="flex-1 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-mono font-bold rounded-lg border border-slate-700">+1K</button>
+            <button id="pip-btn-custom" class="px-2 py-1 bg-indigo-900 hover:bg-indigo-800 text-indigo-200 text-[10px] font-bold rounded-lg border border-indigo-700">עדכן</button>
+          </div>
+          <button id="pip-btn-toggle" class="w-full py-2 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold text-xs rounded-xl transition-all shadow-md">
+            ${isRunning ? (lang === 'he' ? 'השהה שעון' : 'אפשטעלן') : (lang === 'he' ? 'הפעל שעון' : 'אנהייבן')}
           </button>
         `;
 
         pipWindow.document.body.appendChild(pipDiv);
+
+        // Live updater inside PiP window
+        const pipInterval = setInterval(() => {
+          const timerEl = pipWindow.document.getElementById('pip-timer');
+          const charsEl = pipWindow.document.getElementById('pip-chars');
+          const btnToggle = pipWindow.document.getElementById('pip-btn-toggle');
+          if (timerEl) {
+            timerEl.textContent = formatStopwatchWithHundredths(latestStateRef.current.displaySeconds).full;
+          }
+          if (charsEl) {
+            charsEl.textContent = latestStateRef.current.finalCharCount.toLocaleString();
+          }
+          if (btnToggle) {
+            btnToggle.textContent = latestStateRef.current.isRunning
+              ? (lang === 'he' ? 'השהה שעון' : 'אפשטעלן')
+              : (lang === 'he' ? 'הפעל שעון' : 'אנהייבן');
+            btnToggle.className = latestStateRef.current.isRunning
+              ? 'w-full py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl transition-all'
+              : 'w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition-all';
+          }
+        }, 50);
+
+        pipWindow.addEventListener('pagehide', () => {
+          clearInterval(pipInterval);
+        });
+
+        // Click handlers in PiP window
         pipWindow.document.getElementById('pip-btn-toggle')?.addEventListener('click', () => {
           toggleTimer();
+        });
+
+        const addCharsToTracker = (amount: number) => {
+          setManualChars(Math.max(latestStateRef.current.finalCharCount + amount, latestStateRef.current.manualChars + amount));
+        };
+
+        pipWindow.document.getElementById('pip-btn-add100')?.addEventListener('click', () => addCharsToTracker(100));
+        pipWindow.document.getElementById('pip-btn-add500')?.addEventListener('click', () => addCharsToTracker(500));
+        pipWindow.document.getElementById('pip-btn-add1000')?.addEventListener('click', () => addCharsToTracker(1000));
+        pipWindow.document.getElementById('pip-btn-custom')?.addEventListener('click', () => {
+          const val = pipWindow.prompt('הזן מספר תווים חדש לספר זה:');
+          if (val) {
+            const num = parseInt(val, 10);
+            if (!isNaN(num) && num >= 0) setManualChars(num);
+          }
         });
       } catch (e) {
         console.warn('Document Picture-in-Picture fallback triggered', e);
@@ -430,9 +500,10 @@ export const WorkTrackerTab: React.FC<Props> = ({
               {t.cumulative_time_label}
             </h2>
 
-            {/* Stopwatch Display */}
-            <div className="text-5xl sm:text-6xl font-mono font-black tracking-tight text-slate-900 bg-slate-50 border border-slate-100 px-8 py-6 rounded-3xl shadow-inner select-none mb-8">
-              {formatStopwatch(displaySeconds)}
+            {/* Stopwatch Display with Hundredths */}
+            <div className="flex items-baseline justify-center font-mono font-black tracking-tight text-slate-900 bg-slate-50 border border-slate-100 px-8 py-6 rounded-3xl shadow-inner select-none mb-8">
+              <span className="text-5xl sm:text-6xl">{timeObj.mainTime}</span>
+              <span className="text-2xl sm:text-3xl text-emerald-500 font-bold ml-1.5">.{timeObj.hundredths}</span>
             </div>
 
             {/* Controls */}

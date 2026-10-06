@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { WorkMode, Language, BookArchiveRecord, SessionLogRecord, UsefulLink, BackupPayload, GoalRecord, ClientRecord, PomodoroConfig } from './types';
 import { SafeStorage } from './utils/safeStorage';
 import { FileSystemSync } from './utils/fileSystemSync';
@@ -25,7 +25,9 @@ import {
   ManualSessionModal,
   ManualLinkModal,
   ConfirmResetModal,
+  ImportBackupModal,
 } from './components/Modals';
+import { formatStopwatchWithHundredths } from './utils/formatters';
 import { CheckCircle2, ShieldCheck, X } from 'lucide-react';
 
 const seedHistory: BookArchiveRecord[] = [
@@ -173,6 +175,10 @@ export default function App() {
     return parseFloat(SafeStorage.getItem('manualCharInput') || '0') || 0;
   });
 
+  // Derived character count for the entire application
+  const cleanClipboard = clipboardText.replace(/\r/g, '').replace(/\n/g, '').replace(/\s/g, ' ');
+  const finalCharCount = Math.max(cleanClipboard.length, manualChars);
+
   // Quick Notes state (temporary thoughts & editing instructions for current book)
   const [quickNotes, setQuickNotes] = useState<string>(() => {
     return SafeStorage.getItem('quickNotes') ?? '';
@@ -190,6 +196,7 @@ export default function App() {
     return parseFloat(SafeStorage.getItem('accumulatedSeconds') || '0') || 0;
   });
   const [isFloatingMiniOpen, setIsFloatingMiniOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const startCharsRef = React.useRef<number>(0);
 
   // Toast state
@@ -229,41 +236,49 @@ export default function App() {
   const [pomodoroPhase, setPomodoroPhase] = useState<'work' | 'break'>('work');
   const [pomodoroSecondsLeft, setPomodoroSecondsLeft] = useState<number>(25 * 60);
   const [pomodoroCompletedCycles, setPomodoroCompletedCycles] = useState<number>(0);
+  const lastPomodoroTickRef = useRef<number>(Date.now());
 
-  // Synchronize timer display and protect against tab throttling
+  // Synchronize timer display with 20 FPS (50ms) for smooth hundredths of a second
   useEffect(() => {
     let intervalId: NodeJS.Timeout | null = null;
 
     if (isTimerRunning && timerStartedAt !== null) {
+      lastPomodoroTickRef.current = Date.now();
+
       const updateClock = () => {
         const now = Date.now();
         const elapsed = (now - timerStartedAt) / 1000;
         setDisplaySeconds(accumulatedSeconds + elapsed);
 
-        // Pomodoro Tick
+        // Pomodoro Tick (decrement accurately per full elapsed second)
         if (pomodoroConfig.enabled) {
-          setPomodoroSecondsLeft((prev) => {
-            if (prev <= 1) {
-              if (pomodoroPhase === 'work') {
-                if (pomodoroConfig.soundEnabled) playPomodoroBreakSound();
-                setPomodoroPhase('break');
-                showToast(lang === 'he' ? '🍅 סיימת 25 דקות עבודה מרוכזות! צא להפסקת מנוחה של 5 דקות.' : 'פאָמאָדאָראָ פאַרטיג! נעם אַ פויזע.');
-                return pomodoroConfig.breakMinutes * 60;
-              } else {
-                if (pomodoroConfig.soundEnabled) playPomodoroWorkSound();
-                setPomodoroPhase('work');
-                setPomodoroCompletedCycles((c) => c + 1);
-                showToast(lang === 'he' ? '☕ ההפסקה הסתיימה! חוזרים לעבודה מרוכזת.' : 'פויזע פארטיג! צוריק צום ארבעט.');
-                return pomodoroConfig.workMinutes * 60;
+          const deltaSec = Math.floor((now - lastPomodoroTickRef.current) / 1000);
+          if (deltaSec >= 1) {
+            lastPomodoroTickRef.current = now;
+            setPomodoroSecondsLeft((prev) => {
+              const nextVal = prev - deltaSec;
+              if (nextVal <= 0) {
+                if (pomodoroPhase === 'work') {
+                  if (pomodoroConfig.soundEnabled) playPomodoroBreakSound();
+                  setPomodoroPhase('break');
+                  showToast(lang === 'he' ? '🍅 סיימת 25 דקות עבודה מרוכזות! צא להפסקת מנוחה של 5 דקות.' : 'פאָמאָדאָראָ פאַרטיג! נעם אַ פויזע.');
+                  return pomodoroConfig.breakMinutes * 60;
+                } else {
+                  if (pomodoroConfig.soundEnabled) playPomodoroWorkSound();
+                  setPomodoroPhase('work');
+                  setPomodoroCompletedCycles((c) => c + 1);
+                  showToast(lang === 'he' ? '☕ ההפסקה הסתיימה! חוזרים לעבודה מרוכזת.' : 'פויזע פארטיג! צוריק צום ארבעט.');
+                  return pomodoroConfig.workMinutes * 60;
+                }
               }
-            }
-            return prev - 1;
-          });
+              return nextVal;
+            });
+          }
         }
       };
 
       updateClock();
-      intervalId = setInterval(updateClock, 1000);
+      intervalId = setInterval(updateClock, 50); // 20 FPS - smooth running hundredths of a second!
 
       const handleSync = () => {
         updateClock();
@@ -473,10 +488,13 @@ export default function App() {
       if (sessionSeconds > 5) {
         const sessionChars = Math.max(0, finalCharCount - startCharsRef.current);
         const targetRateNum = parseFloat(targetRateInput) || 4500;
+        const currentClient = clients.find((c) => c.id === selectedClientId);
         const newSession: SessionLogRecord = {
           id: `s_${Date.now()}`,
           timestamp: new Date().toISOString(),
           bookName: bookName || 'ספר ללא שם',
+          clientId: selectedClientId || undefined,
+          clientName: currentClient?.name || undefined,
           chars: sessionChars,
           seconds: Math.round(sessionSeconds),
           rate: targetRateNum,
@@ -485,7 +503,7 @@ export default function App() {
       }
       showToast(lang === 'he' ? 'סשן העבודה הושהה!' : 'ארבעט סעסיע אפגעשטעלט!');
     }
-  }, [isTimerRunning, timerStartedAt, accumulatedSeconds, clipboardText, manualChars, targetRateInput, bookName, lang, showToast]);
+  }, [isTimerRunning, timerStartedAt, accumulatedSeconds, clipboardText, manualChars, targetRateInput, bookName, lang, showToast, clients, selectedClientId]);
 
   // Global Keyboard Shortcuts (Ctrl+Space to toggle timer)
   useEffect(() => {
@@ -694,53 +712,96 @@ export default function App() {
     showToast(lang === 'he' ? 'קובץ הגיבוי יוצא בהצלחה למחשב!' : 'גיבוי פייל עקספארטירט!');
   };
 
+  // Reusable import applicator for both file and direct JSON paste
+  const applyImportedData = (data: Partial<BackupPayload>) => {
+    if (!data || typeof data !== 'object') {
+      throw new Error('קובץ לא תקין או ריק');
+    }
+
+    if (Array.isArray(data.bookHistory)) setHistory(data.bookHistory);
+    if (Array.isArray(data.sessionLogs)) setSessionLogs(data.sessionLogs);
+    if (Array.isArray(data.usefulLinks)) setUsefulLinks(data.usefulLinks);
+    if (Array.isArray(data.goals)) setGoals(data.goals);
+    if (Array.isArray(data.clients)) setClients(data.clients);
+    if (data.bookNameInput !== undefined) setBookName(String(data.bookNameInput));
+    if (data.bookPagesInput !== undefined) setBookPages(Number(data.bookPagesInput) || 0);
+    if (data.targetRateInput !== undefined) setTargetRateInput(String(data.targetRateInput));
+    if (data.totalBookChars !== undefined) setTotalBookChars(Number(data.totalBookChars) || 0);
+    if (data.accumulatedSeconds !== undefined) {
+      const sec = Number(data.accumulatedSeconds) || 0;
+      setAccumulatedSeconds(sec);
+      setDisplaySeconds(sec);
+    }
+    if (data.clipboardText !== undefined) setClipboardText(String(data.clipboardText));
+    if (data.manualCharInput !== undefined) setManualChars(Number(data.manualCharInput) || 0);
+    if (data.quickNotes !== undefined) setQuickNotes(String(data.quickNotes));
+    if (data.activeWorkMode !== undefined) setWorkMode(data.activeWorkMode);
+    if (data.hourlyRate !== undefined) setHourlyRate(Number(data.hourlyRate) || 45);
+    if (data.preferredLang !== undefined) setLang(data.preferredLang);
+    if (data.pomodoroConfig) setPomodoroConfig(data.pomodoroConfig);
+
+    playSuccessSound();
+    showToast(lang === 'he' ? 'כל הנתונים שוחזרו בהצלחה מהגיבוי תוך שבריר שניה!' : 'דאטן אימפארטירט מיט ערפאלג!');
+  };
+
+  const readTextFromFile = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('פג הזמן המוקצב לקריאת הקובץ (5 שניות)'));
+      }, 5000);
+
+      // FileReader is universally fast, reliable and never hangs in WebViews
+      const reader = new FileReader();
+      reader.onload = () => {
+        clearTimeout(timeout);
+        resolve(reader.result as string);
+      };
+      reader.onerror = () => {
+        clearTimeout(timeout);
+        if (typeof file.text === 'function') {
+          file.text().then(resolve).catch(reject);
+        } else {
+          reject(new Error('שגיאה בקריאת הקובץ מהמכשיר'));
+        }
+      };
+      reader.readAsText(file, 'utf-8');
+    });
+  };
+
   // Full backup import (JSON file upload) - 100% async, instant, never gets stuck
   const handleImportBackup = async (file: File) => {
     try {
       showToast(lang === 'he' ? 'טוען קובץ גיבוי...' : 'לייענט פייל...');
-      const text = await file.text();
+      const text = await readTextFromFile(file);
       const data = JSON.parse(text);
-
-      if (!data || typeof data !== 'object') {
-        throw new Error('קובץ לא תקין');
-      }
-
-      if (Array.isArray(data.bookHistory)) setHistory(data.bookHistory);
-      if (Array.isArray(data.sessionLogs)) setSessionLogs(data.sessionLogs);
-      if (Array.isArray(data.usefulLinks)) setUsefulLinks(data.usefulLinks);
-      if (Array.isArray(data.goals)) setGoals(data.goals);
-      if (Array.isArray(data.clients)) setClients(data.clients);
-      if (data.bookNameInput !== undefined) setBookName(String(data.bookNameInput));
-      if (data.bookPagesInput !== undefined) setBookPages(Number(data.bookPagesInput) || 0);
-      if (data.targetRateInput !== undefined) setTargetRateInput(String(data.targetRateInput));
-      if (data.totalBookChars !== undefined) setTotalBookChars(Number(data.totalBookChars) || 0);
-      if (data.accumulatedSeconds !== undefined) {
-        const sec = Number(data.accumulatedSeconds) || 0;
-        setAccumulatedSeconds(sec);
-        setDisplaySeconds(sec);
-      }
-      if (data.clipboardText !== undefined) setClipboardText(String(data.clipboardText));
-      if (data.manualCharInput !== undefined) setManualChars(Number(data.manualCharInput) || 0);
-      if (data.quickNotes !== undefined) setQuickNotes(String(data.quickNotes));
-      if (data.activeWorkMode !== undefined) setWorkMode(data.activeWorkMode);
-      if (data.hourlyRate !== undefined) setHourlyRate(Number(data.hourlyRate) || 45);
-      if (data.preferredLang !== undefined) setLang(data.preferredLang);
-      if (data.pomodoroConfig) setPomodoroConfig(data.pomodoroConfig);
-
-      playSuccessSound();
-      showToast(lang === 'he' ? 'כל הנתונים שוחזרו בהצלחה מקובץ הגיבוי!' : 'דאטן אימפארטירט מיט ערפאלג!');
-    } catch (err) {
+      applyImportedData(data);
+    } catch (err: unknown) {
       console.error('Import error:', err);
-      showToast(lang === 'he' ? 'שגיאה: קובץ ה-JSON אינו תקין או פגום.' : 'שגיאה ביים לייענען דעם JSON פייל.');
+      const msg = err instanceof Error ? err.message : 'שגיאה בקריאת הקובץ';
+      showToast(lang === 'he' ? `שגיאה בייבוא: ${msg}` : 'שגיאה ביים לייענען דעם JSON פייל.');
+      throw err;
+    }
+  };
+
+  const handleImportJsonText = (jsonStr: string) => {
+    try {
+      const data = JSON.parse(jsonStr);
+      applyImportedData(data);
+    } catch (err) {
+      console.error('JSON text parse error:', err);
+      showToast(lang === 'he' ? 'שגיאה: תוכן ה-JSON שהודבק אינו תקין' : 'JSON טעקסט איז נישט גילטיג');
     }
   };
 
   // Automated session log on timer pause
   const handleSessionRecorded = (elapsedSeconds: number, chars: number, rate: number) => {
+    const currentClient = clients.find((c) => c.id === selectedClientId);
     const newSession: SessionLogRecord = {
       id: `s_${Date.now()}`,
       timestamp: new Date().toISOString(),
       bookName: bookName || 'ספר ללא שם',
+      clientId: selectedClientId || undefined,
+      clientName: currentClient?.name || undefined,
       chars,
       seconds: Math.round(elapsedSeconds),
       rate,
@@ -753,28 +814,29 @@ export default function App() {
     setIsConfirmResetOpen(false);
 
     if (shouldArchive) {
-      const cleanClipboard = clipboardText.replace(/\r/g, '').replace(/\n/g, '').replace(/\s/g, ' ');
-      const finalChars = Math.max(cleanClipboard.length, manualChars);
       const targetRateNum = parseFloat(targetRateInput) || 4500;
       const hours = accumulatedSeconds / 3600;
 
       let payout = 0;
       if (workMode === 'regular') {
-        payout = (finalChars / targetRateNum) * 45;
+        payout = (finalCharCount / targetRateNum) * 45;
       } else {
         payout = hours * hourlyRate;
       }
 
       const now = new Date();
       const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const currentClient = clients.find((c) => c.id === selectedClientId);
 
       const newArchiveRecord: BookArchiveRecord = {
         id: String(Date.now()),
         month: currentMonth,
         bookName: bookName || 'ספר ללא שם',
+        clientId: selectedClientId || undefined,
+        clientName: currentClient?.name || undefined,
         pages: bookPages,
         chars3: totalBookChars,
-        chars16: finalChars,
+        chars16: finalCharCount,
         hours: parseFloat(hours.toFixed(4)),
         rate: targetRateNum,
         payout,
@@ -836,6 +898,7 @@ export default function App() {
         onToggleTimer={toggleTimer}
         onOpenFloatingTimer={() => setIsFloatingMiniOpen(true)}
         clientCount={clients.length}
+        onOpenImportModal={() => setIsImportModalOpen(true)}
       />
 
       {/* Main Content Body */}
@@ -905,6 +968,10 @@ export default function App() {
             onToggleGoal={handleToggleGoal}
             onUpdateProgress={handleUpdateGoalProgress}
             onDeleteGoal={handleDeleteGoal}
+            sessionLogs={sessionLogs}
+            history={history}
+            displaySeconds={displaySeconds}
+            currentWorkedChars={finalCharCount}
           />
         )}
 
@@ -1035,16 +1102,22 @@ export default function App() {
         onConfirm={handleConfirmReset}
       />
 
+      {/* Import Backup Modal (File upload + Drag & Drop + Direct JSON paste) */}
+      <ImportBackupModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        lang={lang}
+        onImportFile={handleImportBackup}
+        onImportJsonText={handleImportJsonText}
+      />
+
       {/* Floating Always-On-Top Mini Timer Widget */}
       <FloatingMiniTimer
         lang={lang}
         isRunning={isTimerRunning}
         onToggleTimer={toggleTimer}
         displaySeconds={displaySeconds}
-        charCount={Math.max(
-          clipboardText.replace(/\r/g, '').replace(/\n/g, '').replace(/\s/g, ' ').length,
-          manualChars
-        )}
+        charCount={finalCharCount}
         bookName={bookName}
         hourlyRate={hourlyRate}
         isOpen={isFloatingMiniOpen}
@@ -1054,6 +1127,119 @@ export default function App() {
         pomodoroPhase={pomodoroPhase}
         pomodoroSecondsLeft={pomodoroSecondsLeft}
         onSkipPomodoroPhase={handleSkipPomodoroPhase}
+        onUpdateChars={(count) => {
+          setManualChars(count);
+          showToast(lang === 'he' ? `עודכנו ${count.toLocaleString()} תווים!` : `דערהיינטיגט ${count.toLocaleString()} אותיות!`);
+        }}
+        onAddChars={(delta) => {
+          setManualChars((prev) => {
+            const next = Math.max(finalCharCount + delta, prev + delta);
+            showToast(lang === 'he' ? `נוספו ${delta.toLocaleString()} תווים (סה"כ ${next.toLocaleString()})!` : `צוגעלייגט ${delta.toLocaleString()} אותיות!`);
+            return next;
+          });
+        }}
+        onOpenNativePiP={async () => {
+          if ('documentPictureInPicture' in window) {
+            try {
+              const pipWindow = await (window as unknown as {
+                documentPictureInPicture: {
+                  requestWindow: (options: { width: number; height: number }) => Promise<Window>;
+                };
+              }).documentPictureInPicture.requestWindow({
+                width: 320,
+                height: 250,
+              });
+
+              [...document.styleSheets].forEach((sheet) => {
+                try {
+                  const rules = [...sheet.cssRules].map((r) => r.cssText).join('');
+                  const style = document.createElement('style');
+                  style.textContent = rules;
+                  pipWindow.document.head.appendChild(style);
+                } catch {
+                  const link = document.createElement('link');
+                  link.rel = 'stylesheet';
+                  link.href = sheet.href || '';
+                  if (link.href) pipWindow.document.head.appendChild(link);
+                }
+              });
+
+              const pipDiv = document.createElement('div');
+              pipDiv.className =
+                'bg-slate-950 text-white p-4 h-full flex flex-col items-center justify-center font-sans select-none text-center';
+              pipDiv.style.direction = 'rtl';
+
+              pipDiv.innerHTML = `
+                <div class="text-xs text-indigo-400 font-bold mb-1 truncate max-w-[280px]">${bookName || 'קלדנות וניהול זמנים'}</div>
+                <div id="pip-timer" class="text-2xl font-mono font-black text-white bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-2xl shadow-inner mb-2 tracking-tight">
+                  ${formatStopwatchWithHundredths(displaySeconds).full}
+                </div>
+                <div class="text-[11px] text-slate-300 mb-2 flex items-center justify-center gap-1.5">
+                  <span>תווים שנעבדו:</span>
+                  <strong id="pip-chars" class="text-emerald-400 font-mono font-bold">${finalCharCount.toLocaleString()}</strong>
+                </div>
+                <div class="flex items-center justify-center gap-1.5 mb-3 w-full">
+                  <button id="pip-btn-add100" class="flex-1 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-mono font-bold rounded-lg border border-slate-700">+100</button>
+                  <button id="pip-btn-add500" class="flex-1 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-mono font-bold rounded-lg border border-slate-700">+500</button>
+                  <button id="pip-btn-add1000" class="flex-1 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-mono font-bold rounded-lg border border-slate-700">+1K</button>
+                  <button id="pip-btn-custom" class="px-2 py-1 bg-indigo-900 hover:bg-indigo-800 text-indigo-200 text-[10px] font-bold rounded-lg border border-indigo-700">עדכן</button>
+                </div>
+                <button id="pip-btn-toggle" class="w-full py-2 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold text-xs rounded-xl transition-all shadow-md">
+                  ${isTimerRunning ? 'השהה שעון' : 'הפעל שעון'}
+                </button>
+              `;
+
+              pipWindow.document.body.appendChild(pipDiv);
+
+              const pipInterval = setInterval(() => {
+                const timerEl = pipWindow.document.getElementById('pip-timer');
+                const charsEl = pipWindow.document.getElementById('pip-chars');
+                const btnToggle = pipWindow.document.getElementById('pip-btn-toggle');
+                if (timerEl) {
+                  timerEl.textContent = formatStopwatchWithHundredths(displaySeconds).full;
+                }
+                if (charsEl) {
+                  charsEl.textContent = finalCharCount.toLocaleString();
+                }
+                if (btnToggle) {
+                  btnToggle.textContent = isTimerRunning ? 'השהה שעון' : 'הפעל שעון';
+                  btnToggle.className = isTimerRunning
+                    ? 'w-full py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl transition-all'
+                    : 'w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition-all';
+                }
+              }, 50);
+
+              pipWindow.addEventListener('pagehide', () => {
+                clearInterval(pipInterval);
+              });
+
+              pipWindow.document.getElementById('pip-btn-toggle')?.addEventListener('click', () => {
+                toggleTimer();
+              });
+
+              pipWindow.document.getElementById('pip-btn-add100')?.addEventListener('click', () => {
+                setManualChars((prev) => prev + 100);
+              });
+              pipWindow.document.getElementById('pip-btn-add500')?.addEventListener('click', () => {
+                setManualChars((prev) => prev + 500);
+              });
+              pipWindow.document.getElementById('pip-btn-add1000')?.addEventListener('click', () => {
+                setManualChars((prev) => prev + 1000);
+              });
+              pipWindow.document.getElementById('pip-btn-custom')?.addEventListener('click', () => {
+                const val = pipWindow.prompt('הזן מספר תווים מעודכן:');
+                if (val) {
+                  const num = parseInt(val, 10);
+                  if (!isNaN(num) && num >= 0) setManualChars(num);
+                }
+              });
+
+              showToast(lang === 'he' ? 'חלון Document PiP הופעל (צף מעל כל החלונות במחשב)!' : 'פלאָוטינג זייגער אקטיווירט!');
+            } catch (e) {
+              console.warn('PiP error', e);
+            }
+          }
+        }}
       />
 
       {/* Toast Notification */}
